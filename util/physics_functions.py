@@ -7,8 +7,8 @@ import numpy as np
 from numpy import ndarray
 from scipy.integrate import trapz
 import SLH.network as nw
-from HelperFunctionality.interferometer import Interferometer
-import HelperFunctionality.plots as plots
+from util.interferometer import Interferometer
+import util.plots as plots
 from typing import Callable, List, Any, Tuple, Optional
 
 
