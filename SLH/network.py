@@ -208,7 +208,7 @@ class MatrixOperator:
 
     def __mul__(self, other: Union[complex, qt.Qobj, qt.QobjEvo, "MatrixOperator"]) -> "MatrixOperator":
         """
-        Matrix multiplication with notation as in https://www.wikiwand.com/en/Matrix_multiplication
+        Matrix multiplication self * other with notation as in https://www.wikiwand.com/en/Matrix_multiplication
         :param other: The other matrix operator to multiply with or a complex number
         :return: The multiplication result
         """
@@ -224,11 +224,31 @@ class MatrixOperator:
             new_array: List[List[Union[complex, qt.Qobj, qt.QobjEvo]]] = [[0 for _ in range(self.n)] for _ in range(self.m)]
             for i, row in enumerate(self.array):
                 for j, col in enumerate(row):
-                    new_array[i][j] = other * col
+                    new_array[i][j] = col * other
         return MatrixOperator(new_array)
 
     def __rmul__(self, other: Union[complex, qt.Qobj, qt.QobjEvo, "MatrixOperator"]) -> "MatrixOperator":
-        return self * other
+        """
+        Matrix multiplication other * self with notation as in https://www.wikiwand.com/en/Matrix_multiplication
+        :param other: The other matrix operator to multiply with or a complex number
+        :return: The multiplication result
+        """
+        if isinstance(other, MatrixOperator):
+            if self.n != other.m:
+                raise IndexError("The matrix multiplication must match column dimension to row dimension")
+            new_array: List[List[Union[complex, qt.Qobj, qt.QobjEvo]]] = [[0 for _ in range(self.n)] for _ in
+                                                                          range(other.m)]
+            for i in range(len(new_array)):
+                for j in range(len(new_array[0])):
+                    for k in range(self.n):
+                        new_array[i][j] += other.array[i][k] * self.array[k][j]
+        else:
+            new_array: List[List[Union[complex, qt.Qobj, qt.QobjEvo]]] = [[0 for _ in range(self.n)] for _ in
+                                                                          range(self.m)]
+            for i, row in enumerate(self.array):
+                for j, col in enumerate(row):
+                    new_array[i][j] = other * col
+        return MatrixOperator(new_array)
 
     def __matmul__(self, other: "MatrixOperator") -> "MatrixOperator":
         return self * other
@@ -274,14 +294,14 @@ class Component:
         self.L: MatrixOperator = L
         self.H: qt.Qobj = H
 
-    def feedback_reduction(self, x, y):
+    def feedback_reduction(self, x: int, y: int) -> 'Component':
         """
         Performs the feedback reduction rule, connecting an output of this component to an input of the component
         Eq. 61 - 62 in SLH framework (Combes)
         The array in the matrix operator is 0-indexed
         :param x: The number of the output channel to connect to an input channel
         :param y: The number of the input channel to connect with the output channel
-        :return: Nothing
+        :return: The reduced component
         """
         # Create the S matrix operator with x'th row and y'th column removed
         S_xbar_ybar: MatrixOperator = self.S.remove(row=x, col=y)
@@ -298,16 +318,21 @@ class Component:
         L_x: Union[qt.Qobj, qt.QobjEvo] = self.L.get(row=x).convert_to_qobj()
 
         # Create the inverse operator
-        I: qt.Qobj = qt.qeye(S_xy.dims[0][0])
-        I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy).inv()
-        I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy.dag()).inv()
+        I: qt.Qobj = qt.qeye(S_xy.dims[0])
+        if I - S_xy == I*0:
+            print("Feedback reduction, division by 0 error")
+            I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
+            I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
+        else:
+            I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy).inv()
+            I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy.dag()).inv()
 
         # Create the reduced S matrix operator
         S_red: MatrixOperator = S_xbar_ybar + S_xbar_y * I_S_xy_op * S_x_ybar
         # Create the reduced L matrix operator
         L_red: MatrixOperator = L_xbar + S_xbar_y * I_S_xy_op * L_x
         # Create the reduced H operator
-        H_red: Union[qt.Qobj, qt.QobjEvo] = self.H + 0.5j * ((self.L.dag() * S_y).convert_to_qobj() * I_S_xy_op * L_x -
+        H_red: Union[qt.Qobj, qt.QobjEvo] = self.H - 0.5j * ((self.L.dag() * S_y).convert_to_qobj() * I_S_xy_op * L_x -
                                                              L_x.dag() * I_S_xy_dag_op * (S_y.dag() * self.L).convert_to_qobj())
         return Component(S_red, L_red, H_red)
 
@@ -393,13 +418,7 @@ def direct_coupling(component1: Component, component2: Component, H_int: Optiona
     return Component(S_tot, L_tot, H_tot)
 
 
-def padding(n, component):
-    """
-    Adds a padding of size n to the given component
-    :param n: The number of padding channels to add to the component
-    :param component: The component to add the padding to
-    :return: The padded component
-    """
+def _get_padding_element(n: int) -> Component:
     # Create n x n identity matrix
     In_array: List[List[int]] = [[1 if i == j else 0 for j in range(n)] for i in range(n)]
     In: MatrixOperator = MatrixOperator(In_array)
@@ -410,6 +429,30 @@ def padding(n, component):
 
     # Create the padding component
     I_component: Component = Component(In, L0, 0)
+    return I_component
+
+
+def padding_top(n: int, component: Component) -> Component:
+    """
+    Adds a padding of size n on top of the given component
+    :param n: The number of padding channels to add to the component
+    :param component: The component to add the padding to
+    :return: The padded component
+    """
+    I_component: Component = _get_padding_element(n)
 
     # Add padding using concatenation product
     return concatenation_product(I_component, component)
+
+
+def padding_bottom(n: int, component: Component) -> Component:
+    """
+    Adds a padding of size n below the given component
+    :param n: The number of padding channels to add to the component
+    :param component: The component to add the padding to
+    :return: The padded component
+    """
+    I_component: Component = _get_padding_element(n)
+
+    # Add padding using concatenation product
+    return concatenation_product(component, I_component)

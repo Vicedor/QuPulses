@@ -1,7 +1,14 @@
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-import HelperFunctionality.pulse as p
+import util.pulse as p
 from typing import List, Dict, Union, Optional, Tuple
+
+plt.rc('text', usetex=True)
+plt.rcParams.update({'font.size': 20})
+
+mpl.rcParams['mathtext.fontset'] = 'stix'
+mpl.rcParams['font.family'] = 'STIXGeneral'
 
 
 def plot_autocorrelation(autocorr_mat, vs, eigs, times):
@@ -89,10 +96,10 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
         u_lists.append(u_list)
         g_lists.append(g_list)
 
-    fig, ax4 = plt.subplots(figsize=(8, 8))  # , dpi=1600)
+    fig, ax4 = plt.subplots(figsize=(8, 8))#, dpi=300)
 
     plt.subplot(3, 1, 1)
-    xs = [times for i in range(len(u_lists))]
+    xs = [times for _ in range(len(u_lists))]
     options = [pulse_option[0] for pulse_option in pulse_options]
     plot_subplot(xs, u_lists, options, xlabel=None, ylabel='$\mathrm{Modes}$', legendloc='upper right')
     plt.tick_params(
@@ -119,9 +126,9 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     plt.subplot(3, 1, 3)
     xs = [times for i in range(len(contents))]
     plot_subplot(xs, contents, content_options,
-                 xlabel='$\mathrm{Time}\, (\gamma^{-1})$', ylabel='$\mathrm{Exctiations}$', legendloc='center right')
+                 xlabel='Time (units of $\gamma^{-1}$)', ylabel='$\mathrm{Exctiations}$', legendloc='center right')
 
-    # plt.savefig('figures/empty_cavity.png', bbox_inches='tight')
+    #plt.savefig('test.png', bbox_inches='tight')
     plt.show()
 
 

@@ -9,7 +9,7 @@ from scipy.integrate import trapz
 import SLH.network as nw
 from util.interferometer import Interferometer
 import util.plots as plots
-from typing import Callable, List, Any, Tuple, Optional
+from typing import Callable, List, Any, Tuple, Optional, Union
 
 
 def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
@@ -135,7 +135,9 @@ def integrate_master_equation(liouvillian: Callable[[float, any], qt.Qobj], psi:
     return output
 
 
-def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj, e_ops: List[qt.Qobj], times) -> qt.solver.Result:
+def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
+                                      e_ops: List[Union[qt.Qobj, Callable[[float, Any], float]]],
+                                      times) -> qt.solver.Result:
     """
     Calculates the expectation values and states at all times for a given SLH-component and some operators, by
     time-evolving the system Hamiltonian
@@ -155,7 +157,7 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj, e_ops:
 """Functions for running interferometers"""
 
 
-def run_interferometer(interferometer: Interferometer, times: np.ndarray):
+def run_interferometer(interferometer: Interferometer, times: np.ndarray) -> qt.solver.Result:
     """
     Runs an interferometer, with an SLH-component, pulse-shapes and initial states along with some defined operators
     to get expectation values of. Plots the final result
@@ -164,9 +166,9 @@ def run_interferometer(interferometer: Interferometer, times: np.ndarray):
     """
     pulses = interferometer.pulses
     psi0 = interferometer.psi0
+    pulse_options, content_options = interferometer.get_plotting_options()
     total_system: nw.Component = interferometer.create_component()
     e_ops: List[qt.Qobj] = interferometer.get_expectation_observables()
-    pulse_options, content_options = interferometer.get_plotting_options()
 
     # Test plotting options
     assert len(pulse_options) == len(pulses)
@@ -175,6 +177,8 @@ def run_interferometer(interferometer: Interferometer, times: np.ndarray):
     result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
 
     plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
+
+    return result
 
 
 def run_autocorrelation(interferometer: Interferometer, times: np.ndarray):
@@ -187,13 +191,10 @@ def run_autocorrelation(interferometer: Interferometer, times: np.ndarray):
     psi0 = interferometer.psi0
     total_system: nw.Component = interferometer.create_component()
 
-    autocorr_mat1, val1s, vec1s = get_most_populated_modes(total_system.liouvillian, total_system.get_Ls()[0],
-                                                           psi0, times, n=2)
-    autocorr_mat2, val2s, vec2s = get_most_populated_modes(total_system.liouvillian, total_system.get_Ls()[1],
-                                                           psi0, times, n=2)
-
-    plots.plot_autocorrelation(autocorr_mat=autocorr_mat1, vs=vec1s, eigs=val1s, times=times)
-    plots.plot_autocorrelation(autocorr_mat=autocorr_mat2, vs=vec2s, eigs=val2s, times=times)
+    Ls: List[qt.QobjEvo] = total_system.get_Ls()
+    for L in Ls:
+        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=2)
+        plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
 
 
 def run_multiple_tau(interferometer: Interferometer, taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):
@@ -216,7 +217,7 @@ def run_multiple_tau(interferometer: Interferometer, taus: np.ndarray, tps: np.n
         times = np.linspace(0, T, nT)  # The list of points in time to evaluate the observables
         tp = tps[i]  # 4
 
-        interferometer.set_pulses(tp, tau)
+        interferometer.redefine_pulse_args([tp, tau])
         total_system: nw.Component = interferometer.create_component()
 
         L0: qt.QobjEvo = total_system.get_Ls()[0]

@@ -5,33 +5,38 @@ will contain functions for defining the Hilbert space and the SLH components
 import qutip as qt
 from abc import ABCMeta, abstractmethod
 import SLH.network as nw
+import util.pulse as p
 from typing import List, Any
 
 
 class Interferometer(metaclass=ABCMeta):
-    @abstractmethod
-    def __init__(self):
-        self._psi0 = None
-        pass
+    def __init__(self, psi0: qt.Qobj, pulses: List[p.Pulse]):
+        self._psi0: qt.Qobj = psi0
+        self._pulses: List[p.Pulse] = pulses
 
     @property
-    @abstractmethod
     def pulses(self):
-        pass
+        return self._pulses
+
+    @pulses.setter
+    def pulses(self, value):
+        self._pulses = value
+
+    def redefine_pulse_args(self, args):
+        """
+        Redefines all pulses with new arguments. Sets all pulses with the same arguments
+        :param args: The arguments to give to the pulses
+        """
+        for pulse in self._pulses:
+            pulse.set_pulse_args(args)
 
     @property
-    @abstractmethod
     def psi0(self):
-        pass
+        return self._psi0
 
-    @abstractmethod
-    def set_pulses(self, tp: float, tau: float):
-        """
-        Redefines the pulses used in the interferometer
-        :param tp: The time at which the gaussian pulse peaks
-        :param tau: The width of the gaussian pulse
-        """
-        pass
+    @psi0.setter
+    def psi0(self, value):
+        self._psi0 = value
 
     @abstractmethod
     def create_component(self) -> nw.Component:
@@ -56,11 +61,3 @@ class Interferometer(metaclass=ABCMeta):
         :return: The plotting options
         """
         pass
-
-    @psi0.setter
-    def psi0(self, value):
-        self._psi0 = value
-
-    @psi0.getter
-    def psi0(self):
-        return self._psi0

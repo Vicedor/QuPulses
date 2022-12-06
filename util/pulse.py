@@ -2,24 +2,42 @@
 Implements a quantum pulse with pulse shape u(t) and coupling constant from cavity g(t)
 """
 import numpy as np
-from HelperFunctionality.constants import *
-import HelperFunctionality.math_functions as m
+from util.constants import *
+import util.math_functions as m
+from typing import Tuple, Callable
 
 
 class Pulse:
     def __init__(self, shape: str, in_going: bool, args):
         self.shape = shape
         self.in_going: bool = in_going
-        self.args = args
-        if shape == gaussian:
-            self._u = m.gaussian(*args)
-            self._g = m.gaussian_integral(*args)
-        elif shape == gaussian_sine:
-            self._u = m.gaussian_sine(*args)
-            self._g = m.gaussian_sine_integral(*args)
-        elif shape == filtered_gaussian:
-            self._u = m.filtered_gaussian(*args)
-            self._g = m.filtered_gaussian_integral(*args)
+        self._u, self._g = self._get_mode_function(args)
+
+    def set_pulse_args(self, args):
+        """
+        Redefines the pulse-mode with new arguments. Does not change the functional shape of the pulse, only the
+        arguments for the mode function
+        :param args: The new arguments
+        """
+        self._u, self._g = self._get_mode_function(args)
+
+    def _get_mode_function(self, args) -> Tuple[Callable[[float], float], Callable[[float], float]]:
+        """
+        Gets the mode functions u and g from the shape attribute
+        :return: The mode functions u and g
+        """
+        if self.shape == gaussian:
+            u = m.gaussian(*args)
+            g = m.gaussian_integral(*args)
+        elif self.shape == gaussian_sine:
+            u = m.gaussian_sine(*args)
+            g = m.gaussian_sine_integral(*args)
+        elif self.shape == filtered_gaussian:
+            u = m.filtered_gaussian(*args)
+            g = m.filtered_gaussian_integral(*args)
+        else:
+            raise ValueError(self.shape + " is not a defined pulse mode.")
+        return u, g
 
     def u(self, t: float) -> float:
         """
