@@ -30,8 +30,8 @@ def create_beam_splitter() -> nw.Component:
     eq A2 in the SLH-paper and eq 6.8 in Gerry & Knight, Introductory Quantum Optics
     :return: The beam splitter component
     """
-    return nw.Component(S=nw.MatrixOperator([[1 / np.sqrt(2), 1 / np.sqrt(2)],
-                                             [-1 / np.sqrt(2), 1 / np.sqrt(2)]]),
+    return nw.Component(S=nw.MatrixOperator([[-1 / np.sqrt(2), 1 / np.sqrt(2)],
+                                             [1 / np.sqrt(2), 1 / np.sqrt(2)]]),
                         L=nw.MatrixOperator([[0], [0]]),
                         H=0)
 
@@ -61,6 +61,16 @@ def create_three_level_atom(I: qt.Qobj, sigma_ae: qt.Qobj, sigma_be: qt.Qobj,
     :return: An SLH component of a three level atom with the given parameters
     """
     return nw.Component(S=nw.MatrixOperator(I),
-                        L=nw.MatrixOperator(np.sqrt(gamma1) * sigma_ae + np.sqrt(gamma2) * sigma_be),
+                        L=nw.MatrixOperator(np.sqrt(2)**0 * np.sqrt(gamma1) * sigma_ae + np.sqrt(gamma2) * sigma_be),
                         H=w1 * sigma_ae.dag() * sigma_ae + w2 * sigma_be * sigma_be.dag())
 
+
+def create_interferometer_with_lower_system(system: nw.Component) -> nw.Component:
+    """
+    Creates an interferometer with the given system placed in the lower arm
+    :param system: The system to place in the lower arm
+    :return: An interferometer component with the system in the lower arm
+    """
+    beam_splitter: nw.Component = create_beam_splitter()
+    padded_system: nw.Component = nw.padding_top(1, system)
+    return nw.series_product(nw.series_product(beam_splitter, padded_system), beam_splitter)

@@ -10,6 +10,7 @@ import SLH.network as nw
 from util.interferometer import Interferometer
 import util.plots as plots
 from typing import Callable, List, Any, Tuple, Optional, Union
+import pickle
 
 
 def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
@@ -157,12 +158,13 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
 """Functions for running interferometers"""
 
 
-def run_interferometer(interferometer: Interferometer, times: np.ndarray) -> qt.solver.Result:
+def run_interferometer(interferometer: Interferometer, times: np.ndarray, plot: bool = True) -> qt.solver.Result:
     """
     Runs an interferometer, with an SLH-component, pulse-shapes and initial states along with some defined operators
     to get expectation values of. Plots the final result
     :param interferometer: The interferometer to time-evolve
     :param times: An array of times at which to evaluate the expectation values and states of the system
+    :param plot: Boolean of whether to plot the result
     """
     pulses = interferometer.pulses
     psi0 = interferometer.psi0
@@ -176,7 +178,8 @@ def run_interferometer(interferometer: Interferometer, times: np.ndarray) -> qt.
 
     result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
 
-    plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
+    if plot:
+        plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
 
     return result
 
@@ -193,7 +196,9 @@ def run_autocorrelation(interferometer: Interferometer, times: np.ndarray):
 
     Ls: List[qt.QobjEvo] = total_system.get_Ls()
     for L in Ls:
-        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=2)
+        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=6)
+        with open(f"output_modes/exact_2_photons_1_layer.pk1", "wb") as file:
+            pickle.dump(vecs, file)
         plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
 
 
@@ -250,7 +255,7 @@ def run_optimize_squeezed_states(interferometer: Interferometer, N: int, times: 
     psi0s = qt.basis(2, 0)  # Initial system state    for xi in xis:
     for xi in xis:
         psi0u, success_prob = get_photon_subtracted_squeezed_state(N, xi)
-        #psi0u = qt.squeeze(N, xi) * qt.basis(N, 0)
+        # psi0u = qt.squeeze(N, xi) * qt.basis(N, 0)
         psi0 = qt.tensor(psi0u, psi0s)
         input_photons = qt.expect(qt.create(N) * qt.destroy(N), psi0u)
         total_system: nw.Component = interferometer.create_component()
@@ -292,6 +297,18 @@ def get_photon_subtracted_squeezed_state(N: int, xi: complex) -> Tuple[qt.Qobj, 
     return photon_subtracted_squeezed_state.unit(), success_prob
 
 
+def get_odd_schrodinger_cat_state(N: int, alpha: complex) -> qt.Qobj:
+    """
+    Generates an odd schrödinger cat state of the form given in eq. 7.116 in Gerry and Knight, Introductory Quantum
+    optics
+    :param N: The size of the Hilbert space
+    :param alpha: The alpha coefficient for the coherent state
+    :return: The Qobj for the odd cat state
+    """
+    odd_cat_state: qt.Qobj = (qt.coherent(N, alpha) - qt.coherent(N, -alpha)) / np.sqrt(2*(1 - np.exp(-2*alpha**2)))
+    return odd_cat_state
+
+
 """
 THE TWO FOLLOWING FUNCTION ARE NOT YET FINISHED!
 
@@ -326,11 +343,12 @@ def quantum_trajectory_method(H: qt.Qobj, L: qt.QobjEvo, psi: qt.Qobj,
         Ht: qt.Qobj = H(t)
         Lt: qt.Qobj = L(t)
         LdagLt: qt.Qobj = LdagL(t)
-        #return -1j * (qt.spre(Ht) - qt.spost(Ht)) - 0.5 * (qt.spost(LdagLt) + qt.spre(LdagLt)) + qt.to_super(Lt * rho_k * Lt.dag())
+        # return -1j * (qt.spre(Ht) - qt.spost(Ht)) - 0.5 * (qt.spost(LdagLt) + qt.spre(LdagLt)) + qt.to_super(Lt * rho_k * Lt.dag())
         const_term: qt.Qobj = (qt.destroy(5) * rho_k * qt.destroy(5).dag())
-        return -0.5 * 0.2 * (qt.destroy(5).dag() * qt.destroy(5) * rho + rho * qt.destroy(5).dag() * qt.destroy(5)) + 0.2 * const_term
+        return -0.5 * 0.2 * (qt.destroy(5).dag() * qt.destroy(5) * rho + rho * qt.destroy(5).dag() * qt.destroy(
+            5)) + 0.2 * const_term
 
-    args = {name+"=Qobj": dm,
+    args = {name + "=Qobj": dm,
             "rho_k": 0}
 
     res: qt.solver.Result = qt.mesolve(H=L_func, rho0=dm, tlist=times, c_ops=[], e_ops=e_ops, args=args,

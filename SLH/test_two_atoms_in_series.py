@@ -17,19 +17,19 @@ import network as nw
 plt.rc('text', usetex=True)
 plt.rcParams.update({'font.size': 20})
 
-tp = 1.1
-tau = 0.38
+tp = 4
+tau = 1
 w0 = 0
 Delta1 = 0
 Delta2 = 0
 gamma1 = 1
 gamma2 = 1
 
-T = 6                              # Maximum time to run simulation (in units gamma^-1)
+T = 12                              # Maximum time to run simulation (in units gamma^-1)
 nT = 500                           # The number of points in time to include
 times = np.linspace(0, T, nT)       # The list of points in time to evaluate the observables
 
-N = 3
+N = 2
 d = 2
 offset = 0
 
@@ -38,7 +38,7 @@ v_shape = gaussian
 
 # Initial state
 # u: incoming photon pulse
-psi0u = qt.basis(N, 2, offset=offset)  # Initial number of input photons
+psi0u = qt.basis(N, 1, offset=offset)  # Initial number of input photons
 # s: system
 psi0s1 = qt.basis(d, 0)  # Initial system state
 psi0s2 = qt.basis(d, 0)
@@ -157,7 +157,7 @@ def main():
     plot(n1, Pe1, Pe2)
 
     autocorr_mat, vals, vecs = ph.get_most_populated_modes(total_system.liouvillian, total_system.get_Ls()[0],
-                                                           psi0, 3, times)
+                                                           psi0, times, 2)
 
     plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
 

@@ -11,6 +11,22 @@ mpl.rcParams['mathtext.fontset'] = 'stix'
 mpl.rcParams['font.family'] = 'STIXGeneral'
 
 
+def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], label_list: List[str],
+                x_label: str, y_label: str, title: str):
+    plt.figure()
+    for i in range(len(xs_list)):
+        if i == 0:
+            plt.plot(xs_list[i], ys_list[i], linewidth=5, label=label_list[i])
+        else:
+            plt.plot(xs_list[i], ys_list[i], linewidth=2, label=label_list[i])
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    plt.legend()
+    plt.xlim([-0.1, 12.1])
+    plt.show()
+
+
 def plot_autocorrelation(autocorr_mat, vs, eigs, times):
     fig, ax = plt.subplots(figsize=(8, 16))
 
@@ -136,4 +152,19 @@ def plot_arm_populations(taus, arm0_populations, arm1_populations):
     plt.figure()
     plt.plot(taus, arm0_populations, label="arm0")
     plt.plot(taus, arm1_populations, label="arm1")
+    plt.xlabel("$\\tau$")
+    plt.ylabel("Photon content")
+    plt.legend()
+    plt.show()
+
+
+def plot_fidelities(xs, fidelity_aa, fidelity_ab, fidelity_ba, xlabel="", title=""):
+    plt.figure()
+    plt.plot(xs, fidelity_aa, "-", label="aa")
+    plt.plot(xs, fidelity_ab, "--", label="ab")
+    plt.plot(xs, fidelity_ba, ":", label="ba")
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel("Fidelity")
+    plt.legend()
     plt.show()

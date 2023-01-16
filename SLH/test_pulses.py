@@ -16,27 +16,27 @@ import network as nw
 plt.rc('text', usetex=True)
 plt.rcParams.update({'font.size': 20})
 
-tp = 1250
-tau = 500
+tp = 4
+tau = 1
 w0 = 0
 Delta = 0
 gamma = 1
 
-T = 3000                              # Maximum time to run simulation (in units gamma^-1)
+T = 12                              # Maximum time to run simulation (in units gamma^-1)
 nT = 1000                           # The number of points in time to include
 times = np.linspace(0, T, nT)       # The list of points in time to evaluate the observables
 
-N = 4
+N = 2
 d = 2
-M = 4
+M = 2
 offset = 0
 
 u_shape = gaussian
-v_shape = gaussian
+v_shape = filtered_gaussian
 
 # Initial state
 # u: incoming photon pulse
-psi0u = qt.basis(N, 3, offset=offset)  # Initial number of input photons
+psi0u = qt.basis(N, 1, offset=offset)  # Initial number of input photons
 #psi0u = 0.77 * qt.basis(N, 1) + 0.54 * qt.basis(N, 3) + 0.29 * qt.basis(N, 5) + 0.14 * qt.basis(N, 7)
 # s: system
 psi0s = qt.basis(d, 0)  # Initial system state
@@ -45,7 +45,7 @@ psi0v = qt.basis(M, 0)  # Initial number of output photons
 psi0 = qt.tensor(psi0u, psi0s, psi0v)
 
 u_pulse = p.Pulse(shape=u_shape, in_going=True, args=[tp, tau])#, gamma, w0, nT, times])
-v_pulse = p.Pulse(shape=v_shape, in_going=False, args=[tp, tau])#, gamma, w0, nT, times])
+v_pulse = p.Pulse(shape=v_shape, in_going=False, args=[tp, tau, gamma, w0, nT, times])
 pulses = [u_pulse, v_pulse]
 
 # Plotting options

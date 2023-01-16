@@ -17,31 +17,31 @@ import network as nw
 plt.rc('text', usetex=True)
 plt.rcParams.update({'font.size': 20})
 
-tp = 1
-tau = 0.435
+tp = 4
+tau = 1
 w0 = 0
 Delta = 0
 gamma = 1
 
-T = 6                              # Maximum time to run simulation (in units gamma^-1)
-nT = 1000                           # The number of points in time to include
+T = 12                              # Maximum time to run simulation (in units gamma^-1)
+nT = 500                           # The number of points in time to include
 times = np.linspace(0, T, nT)       # The list of points in time to evaluate the observables
 
-N = 3
+N = 2
 d = 2
 offset = 0
 
-u_shape = gaussian
+u_shape = filtered_gaussian
 v_shape = filtered_gaussian
 
 # Initial state
 # u: incoming photon pulse
-psi0u = qt.basis(N, 2, offset=offset)  # Initial number of input photons
+psi0u = qt.basis(N, 1, offset=offset)  # Initial number of input photons
 # s: system
 psi0s = qt.basis(d, 0)  # Initial system state
 psi0 = qt.tensor(psi0u, psi0s)
 
-u_pulse = p.Pulse(shape=u_shape, in_going=True, args=[tp, tau])#, gamma, w0, nT, times])
+u_pulse = p.Pulse(shape=u_shape, in_going=True, args=[tp, tau, gamma, w0, nT, times])
 v_pulse = p.Pulse(shape=v_shape, in_going=False, args=[tp, tau, gamma, w0, nT, times])
 
 
@@ -163,7 +163,7 @@ def main():
     rho = result.states
 
     autocorr_mat, vals, vecs = ph.get_most_populated_modes(total_system.liouvillian, total_system.get_Ls()[0],
-                                                           psi0, 3, times)
+                                                           psi0, times, 3)
 
     plot(n1, Pe)
 
