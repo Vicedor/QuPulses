@@ -11,6 +11,24 @@ mpl.rcParams['mathtext.fontset'] = 'stix'
 mpl.rcParams['font.family'] = 'STIXGeneral'
 
 
+class SubPlotOptions:
+    def __init__(self, xlabel: Optional[str], ylabel: Optional[str], legendloc: str = 'upper right',
+                 xlim: Optional[Tuple[float, float]] = None, ylim: Optional[Tuple[float, float]] = None):
+        self.xlabel: str = xlabel
+        self.ylabel: str = ylabel
+        self.legendloc: str = legendloc
+        self.xlim: Optional[Tuple[int, int]] = xlim
+        self.ylim: Optional[Tuple[int, int]] = ylim
+
+
+class LineOptions:
+    def __init__(self, linetype: str, linewidth: int, color: str, label: str):
+        self.linetype: str = linetype
+        self.linewidth: int = linewidth
+        self.color: str = color
+        self.label: str = label
+
+
 def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], label_list: List[str],
                 x_label: str, y_label: str, title: str):
     plt.figure()
@@ -23,61 +41,59 @@ def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], label_list
     plt.ylabel(y_label)
     plt.title(title)
     plt.legend()
-    plt.xlim([-0.1, 12.1])
     plt.show()
 
 
-def plot_autocorrelation(autocorr_mat, vs, eigs, times):
-    fig, ax = plt.subplots(figsize=(8, 16))
+def simple_subplots(xs_lists: List[List[np.ndarray]], ys_lists: List[List[np.ndarray]],
+                    line_options_lists: List[List[LineOptions]],
+                    plot_options_list: List[SubPlotOptions], title: str):
+    fig, ax4 = plt.subplots(figsize=(8, 8))#, dpi=300)
 
-    plt.subplot(2, 1, 1)
-    real_autocorr_mat1 = np.real(autocorr_mat)
-    im = plt.imshow(real_autocorr_mat1)
-    plt.colorbar(im)
-
-    plt.subplot(2, 1, 2)
-    for i, v in enumerate(vs):
-        plt.plot(times, v, "-", linewidth=4, label=f"$v_{i} (n_{i}={np.real(eigs[i]):.2f})$")
-    plt.legend(loc='center right', frameon=False)
-
+    n_plots = len(xs_lists)
+    for i in range(n_plots):
+        plt.subplot(n_plots, 1, i + 1)
+        plot_subplot(xs_lists[i], ys_lists[i], line_options_lists[i], plot_options_list[i])
+    plt.title = title
     plt.show()
 
 
 def plot_subplot(xs: Union[np.ndarray, List[np.ndarray]], ys: Union[np.ndarray, List[np.ndarray]],
-                 options: Union[Dict, List[Dict]], xlabel: Optional[str], ylabel: Optional[str], legendloc: str):
+                 line_options: Union[LineOptions, List[LineOptions]], plot_options: SubPlotOptions):
     """
     Plots a subplot of a matplotlib subplot class. Plots multiple plots in the same subplot as specified by parameters
     :param xs: A list of x-values for each plot
     :param ys: A list of y-values for each plot
-    :param options: A dictionary of options for each plot. Options are "linetype", "linewidth", "color" and "label"
-    :param xlabel: The label for the x-axis (can be None)
-    :param ylabel: The label for the y-axis
-    :param legendloc: The location of the legend
+    :param line_options: An object of options for each line.
+    :param plot_options: An object of options for each plot.
     """
     if not isinstance(xs, list):
         xs = [xs]
     if not isinstance(ys, list):
         ys = [ys]
-    if not isinstance(options, list):
-        options = [options]
+    if not isinstance(line_options, list):
+        line_options = [line_options]
 
     for i in range(len(xs)):
         x = xs[i]
         y = ys[i]
-        option = options[i]
-        plt.plot(x, np.real(y), option["linetype"], linewidth=option["linewidth"], color=option["color"],
-                 label=option["label"])
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
+        option = line_options[i]
+        plt.plot(x, np.real(y), option.linetype, linewidth=option.linewidth, color=option.color,
+                 label=option.label)
+    plt.xlabel(plot_options.xlabel)
+    plt.ylabel(plot_options.ylabel)
     plt.grid()
-    plt.legend(loc=legendloc, frameon=False)
+    if plot_options.xlim is not None:
+        plt.xlim(plot_options.xlim)
+    if plot_options.ylim is not None:
+        plt.ylim(plot_options.ylim)
+    plt.legend(loc=plot_options.legendloc, frameon=False)
 
 
 def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]],
-                         pulse_options: Union[Tuple[Dict[str, Union[str, int]], Dict[str, Union[str, int]]],
-                                              List[Tuple[Dict[str, Union[str, int]], Dict[str, Union[str, int]]]]],
+                         pulse_options: Union[Tuple[LineOptions, LineOptions],
+                                              List[Tuple[LineOptions, LineOptions]]],
                          contents: Union[np.ndarray, List[np.ndarray]],
-                         content_options: Union[Dict[str, Union[str, int]], List[Dict[str, Union[str, int]]]]):
+                         content_options: Union[LineOptions]):
     """
     Plots the system contents, as in Kiilerich's short paper. First plot is the pulse modes, next is the g(t)
     coefficients. Last are the mode contents
@@ -117,7 +133,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     plt.subplot(3, 1, 1)
     xs = [times for _ in range(len(u_lists))]
     options = [pulse_option[0] for pulse_option in pulse_options]
-    plot_subplot(xs, u_lists, options, xlabel=None, ylabel='$\mathrm{Modes}$', legendloc='upper right')
+    plot_subplot(xs, u_lists, options, SubPlotOptions(xlabel=None, ylabel='$\mathrm{Modes}$', legendloc='upper right'))
     plt.tick_params(
         axis='x',  # changes apply to the x-axis
         which='both',  # both major and minor ticks are affected
@@ -128,8 +144,8 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     plt.subplot(3, 1, 2)
     xs = [times for i in range(len(g_lists))]
     options = [pulse_option[1] for pulse_option in pulse_options]
-    plot_subplot(xs, g_lists, options,  xlabel=None, ylabel='$\mathrm{Rates}\, (\gamma)$',
-                 legendloc='center right')
+    plot_subplot(xs, g_lists, options,  SubPlotOptions(xlabel=None, ylabel='$\mathrm{Rates}\, (\gamma)$',
+                 legendloc='center right'))
     plt.tick_params(
         axis='x',  # changes apply to the x-axis
         which='both',  # both major and minor ticks are affected
@@ -142,9 +158,25 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     plt.subplot(3, 1, 3)
     xs = [times for i in range(len(contents))]
     plot_subplot(xs, contents, content_options,
-                 xlabel='Time (units of $\gamma^{-1}$)', ylabel='$\mathrm{Exctiations}$', legendloc='center right')
+                 SubPlotOptions(xlabel='Time (units of $\gamma^{-1}$)', ylabel='$\mathrm{Exctiations}$', legendloc='center right'))
 
     #plt.savefig('test.png', bbox_inches='tight')
+    plt.show()
+
+
+def plot_autocorrelation(autocorr_mat, vs, eigs, times):
+    fig, ax = plt.subplots(figsize=(8, 16))
+
+    plt.subplot(2, 1, 1)
+    real_autocorr_mat1 = np.real(autocorr_mat)
+    im = plt.imshow(real_autocorr_mat1)
+    plt.colorbar(im)
+
+    plt.subplot(2, 1, 2)
+    for i, v in enumerate(vs):
+        plt.plot(times, v, "-", linewidth=4, label=f"$v_{i} (n_{i}={np.real(eigs[i]):.2f})$")
+    plt.legend(loc='center right', frameon=False)
+
     plt.show()
 
 

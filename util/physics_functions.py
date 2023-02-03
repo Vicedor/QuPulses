@@ -7,10 +7,9 @@ import numpy as np
 from numpy import ndarray
 from scipy.integrate import trapz
 import SLH.network as nw
-from util.interferometer import Interferometer
+from util.quantumsystem import QuantumSystem
 import util.plots as plots
 from typing import Callable, List, Any, Tuple, Optional, Union
-import pickle
 
 
 def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
@@ -37,6 +36,22 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
                                        e_ops=[b_op_t], times=times[t_idx:]).expect[0]
         autocorr_matrix[t_idx, t_idx:] = ex
         autocorr_matrix[t_idx:, t_idx] = ex
+    return autocorr_matrix
+
+
+def autocorrelation_test(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
+                         a_op: qt.QobjEvo, b_op: qt.Qobj, b_t: Callable[[float], float]):
+    def a_op_t(t: float, state) -> float:
+        return qt.expect(a_op(t), state)
+    result: qt.solver.Result = integrate_master_equation(liouvillian=liouvillian, psi=qt.ket2dm(psi)*b_op, e_ops=[a_op_t], times=times)
+    ex = result.expect[0]
+    autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
+    for t_idx1, t1 in enumerate(times):
+        for t_idx2, t2 in enumerate(times):
+            if t_idx1 <= t_idx2:
+                res = ex[t_idx1] * b_t(t2)
+                autocorr_matrix[t_idx1, t_idx2] = res
+                autocorr_matrix[t_idx2, t_idx1] = res
     return autocorr_matrix
 
 
@@ -158,16 +173,16 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
 """Functions for running interferometers"""
 
 
-def run_interferometer(interferometer: Interferometer, times: np.ndarray, plot: bool = True) -> qt.solver.Result:
+def run_interferometer(interferometer: QuantumSystem, plot: bool = True) -> qt.solver.Result:
     """
     Runs an interferometer, with an SLH-component, pulse-shapes and initial states along with some defined operators
     to get expectation values of. Plots the final result
     :param interferometer: The interferometer to time-evolve
-    :param times: An array of times at which to evaluate the expectation values and states of the system
     :param plot: Boolean of whether to plot the result
     """
     pulses = interferometer.pulses
     psi0 = interferometer.psi0
+    times = interferometer.times
     pulse_options, content_options = interferometer.get_plotting_options()
     total_system: nw.Component = interferometer.create_component()
     e_ops: List[qt.Qobj] = interferometer.get_expectation_observables()
@@ -184,25 +199,25 @@ def run_interferometer(interferometer: Interferometer, times: np.ndarray, plot: 
     return result
 
 
-def run_autocorrelation(interferometer: Interferometer, times: np.ndarray):
+def run_autocorrelation(interferometer: QuantumSystem):
     """
     Calculates the autocorrelation functions on all output channels of an interferometer, to find the pulse modes and
     content of the pulse mode at each interferometer output
     :param interferometer: The interferometer to find the output from
-    :param times: An array of times at which to find the outputs at
     """
     psi0 = interferometer.psi0
+    times = interferometer.times
     total_system: nw.Component = interferometer.create_component()
 
     Ls: List[qt.QobjEvo] = total_system.get_Ls()
     for L in Ls:
         autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=6)
-        with open(f"output_modes/exact_2_photons_1_layer.pk1", "wb") as file:
-            pickle.dump(vecs, file)
+        #with open(f"output_modes/exact_simple_interferometer_1_photons.pk1", "wb") as file:
+        #    pickle.dump(vecs, file)
         plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
 
 
-def run_multiple_tau(interferometer: Interferometer, taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):
+def run_multiple_tau(interferometer: QuantumSystem, taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):
     """
     Gets the photon-population at each interferometer arm as a function of pulse length tau and plots the result
     :param interferometer: The interferometer to time-evolve
@@ -248,14 +263,18 @@ def run_multiple_tau(interferometer: Interferometer, taus: np.ndarray, tps: np.n
     plots.plot_arm_populations(taus, arm0_populations, arm1_populations)
 
 
-def run_optimize_squeezed_states(interferometer: Interferometer, N: int, times: np.ndarray, T: float, nT: float):
+def run_optimize_squeezed_states(interferometer: QuantumSystem, N: int):
     xis = np.linspace(0.1, 2, 40)
     arm0_populations = []
     arm1_populations = []
     psi0s = qt.basis(2, 0)  # Initial system state    for xi in xis:
+
+    times = interferometer.times
+    T = times[-1]
+    nT = len(times)
+
     for xi in xis:
         psi0u, success_prob = get_photon_subtracted_squeezed_state(N, xi)
-        # psi0u = qt.squeeze(N, xi) * qt.basis(N, 0)
         psi0 = qt.tensor(psi0u, psi0s)
         input_photons = qt.expect(qt.create(N) * qt.destroy(N), psi0u)
         total_system: nw.Component = interferometer.create_component()
@@ -330,37 +349,37 @@ def quantum_trajectory_method(H: qt.Qobj, L: qt.QobjEvo, psi: qt.Qobj,
         dm = qt.ket2dm(psi)  # Density matrix of initial state
     else:
         dm = psi
+    dim = psi.shape[0]
 
     LdagL: qt.Qobj = L.dag() * L
 
-    name = "rho"
+    rho_ks = [0]
 
-    def L_func(t, args):
-        rho = args[name]
-        rho_k = args["rho_k"]
+    def d1(t, rho):
+        rho_k = rho_ks[-1]
         if isinstance(rho_k, list):
             rho_k = rho_k[get_closest_index(t, times)]
         Ht: qt.Qobj = H(t)
         Lt: qt.Qobj = L(t)
         LdagLt: qt.Qobj = LdagL(t)
-        # return -1j * (qt.spre(Ht) - qt.spost(Ht)) - 0.5 * (qt.spost(LdagLt) + qt.spre(LdagLt)) + qt.to_super(Lt * rho_k * Lt.dag())
-        const_term: qt.Qobj = (qt.destroy(5) * rho_k * qt.destroy(5).dag())
-        return -0.5 * 0.2 * (qt.destroy(5).dag() * qt.destroy(5) * rho + rho * qt.destroy(5).dag() * qt.destroy(
-            5)) + 0.2 * const_term
+        const_term: qt.Qobj = Lt * rho_k * Lt.dag()
+        out = np.reshape(-1j*(Ht*rho - rho*Ht) - 0.5 * (LdagLt * rho + rho * LdagLt) + const_term, dim**2)
+        print(out)
+        return out
 
-    args = {name + "=Qobj": dm,
-            "rho_k": 0}
+    def d2(t, rho):
+        return np.zeros((1, len(rho)), dtype=complex)
 
-    res: qt.solver.Result = qt.mesolve(H=L_func, rho0=dm, tlist=times, c_ops=[], e_ops=e_ops, args=args,
-                                       options=qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6))
+    res: qt.solver.Result = qt.general_stochastic(state0=dm, times=times, d1=d1, d2=d2, e_ops=e_ops, m_ops=[],
+                                                  options=qt.Options(nsteps=1000000000, store_states=1,
+                                                                     atol=1e-8, rtol=1e-6))
     results[0] = res
     for i in range(1, n):
         print(f"Starting {i} iteration")
         dm = qt.ket2dm(qt.basis(psi.dims[0][0], 2 - i)) * 0
-        args = {"rho_k": res.states,
-                "rho=Qobj": dm}
-        res = qt.solver.Result = qt.mesolve(H=L_func, rho0=dm, tlist=times, c_ops=[], e_ops=e_ops, args=args,
-                                            options=qt.Options(nsteps=1000000000, max_step=0.01,
-                                                               store_states=1, atol=1e-8, rtol=1e-6))
+        rho_ks.append(res.states)
+        res = qt.solver.Result = qt.general_stochastic(state0=dm, times=times, d1=d1, d2=d2, e_ops=e_ops, m_ops=[],
+                                                       options=qt.Options(nsteps=1000000000, store_states=1,
+                                                                          atol=1e-8, rtol=1e-6))
         results[i] = res
     return results

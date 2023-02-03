@@ -3,16 +3,24 @@ This file contains an abstract class to be defined for each kind of interferomet
 will contain functions for defining the Hilbert space and the SLH components
 """
 import qutip as qt
+import numpy as np
 from abc import ABCMeta, abstractmethod
 import SLH.network as nw
 import util.pulse as p
 from typing import List, Any
 
 
-class Interferometer(metaclass=ABCMeta):
-    def __init__(self, psi0: qt.Qobj, pulses: List[p.Pulse]):
+class QuantumSystem(metaclass=ABCMeta):
+    def __init__(self, psi0: qt.Qobj, pulses: List[p.Pulse], times: np.ndarray):
+        """
+        Initializes the Quantum System object with a specific initial state, pulse shape and array of times
+        :param psi0: The initial state for the system
+        :param pulses: The pulses used in the quantum system
+        :param times: An array of times at which to evaluate the expectation values and states of the system
+        """
         self._psi0: qt.Qobj = psi0
         self._pulses: List[p.Pulse] = pulses
+        self._times: np.ndarray = times
 
     @property
     def pulses(self):
@@ -21,6 +29,14 @@ class Interferometer(metaclass=ABCMeta):
     @pulses.setter
     def pulses(self, value):
         self._pulses = value
+
+    @property
+    def times(self):
+        return self._times
+
+    @times.setter
+    def times(self, value):
+        self._times = value
 
     def redefine_pulse_args(self, args):
         """

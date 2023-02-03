@@ -60,6 +60,29 @@ def gaussian_sine_integral(tp: float, tau: float) -> Callable[[float], float]:
     return temp
 
 
+def theta(t, tp, tau):
+    """
+    Analytical derivation of the antiderivative of -1/2 g_u(t) * g_v(t) for u(t) = v(t) and u(t) is gaussian
+    :param t: The time
+    :param tp: The pulse peak
+    :param tau: The pulse width
+    :return: The value of the analytical antiderivative
+    """
+    return - np.arcsin(np.sqrt((erf((t - tp) / tau) + erf(tp / tau)) / 2))
+
+
+def cot(t):
+    """
+    The cotangent of the angle t: cot(t) = cos(t)/sin(t). If sin(t) = 0 it returns cot(t) = 0
+    :param t: the angle
+    :return: the cotangent of the angle
+    """
+    if isinstance(t, float):
+        if np.sin(t) == 0:
+            return 0
+    return np.cos(t) / np.sin(t)
+
+
 def filtered_gaussian(tp: float, tau: float, gamma: float, w0: float, nT: int, times: np.ndarray):
     """
     Gets a function describing a filtered gaussian
