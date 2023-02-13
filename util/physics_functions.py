@@ -342,44 +342,63 @@ def get_closest_index(t, times):
     return len(times) - 1
 
 
-def quantum_trajectory_method(H: qt.Qobj, L: qt.QobjEvo, psi: qt.Qobj,
+def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo], L: Union[qt.Qobj, qt.QobjEvo], psi: qt.Qobj,
                               e_ops: List[qt.Qobj], times: np.ndarray, n: int) -> List[qt.solver.Result]:
-    results: List[Optional[qt.solver.Result]] = [None] * n
     if psi.isket:
         dm = qt.ket2dm(psi)  # Density matrix of initial state
     else:
         dm = psi
-    dim = psi.shape[0]
 
-    LdagL: qt.Qobj = L.dag() * L
+    time_dep_H = isinstance(H, qt.QobjEvo)
+    time_dep_L = isinstance(L, qt.QobjEvo)
+
+    T = times[-1]
+    nT = len(times)
+    dt = T/nT
 
     rho_ks = [0]
+    results = []
 
-    def d1(t, rho):
-        rho_k = rho_ks[-1]
-        if isinstance(rho_k, list):
-            rho_k = rho_k[get_closest_index(t, times)]
-        Ht: qt.Qobj = H(t)
-        Lt: qt.Qobj = L(t)
-        LdagLt: qt.Qobj = LdagL(t)
-        const_term: qt.Qobj = Lt * rho_k * Lt.dag()
-        out = np.reshape(-1j*(Ht*rho - rho*Ht) - 0.5 * (LdagLt * rho + rho * LdagLt) + const_term, dim**2)
-        print(out)
-        return out
-
-    def d2(t, rho):
-        return np.zeros((1, len(rho)), dtype=complex)
-
-    res: qt.solver.Result = qt.general_stochastic(state0=dm, times=times, d1=d1, d2=d2, e_ops=e_ops, m_ops=[],
-                                                  options=qt.Options(nsteps=1000000000, store_states=1,
-                                                                     atol=1e-8, rtol=1e-6))
-    results[0] = res
-    for i in range(1, n):
+    for i in range(n):
         print(f"Starting {i} iteration")
-        dm = qt.ket2dm(qt.basis(psi.dims[0][0], 2 - i)) * 0
-        rho_ks.append(res.states)
-        res = qt.solver.Result = qt.general_stochastic(state0=dm, times=times, d1=d1, d2=d2, e_ops=e_ops, m_ops=[],
-                                                       options=qt.Options(nsteps=1000000000, store_states=1,
-                                                                          atol=1e-8, rtol=1e-6))
-        results[i] = res
+        res = qt.solver.Result()
+        res.times = times
+        rho_t = [0 for _ in range(nT + 1)]
+        if i == 0:
+            rho_t[0] = dm
+        else:
+            rho_t[0] = dm*0
+        e_ops_t = [[None for _ in range(nT)] for _ in e_ops]
+
+        for j, t in enumerate(times):
+            if time_dep_H:
+                Ht: qt.Qobj = H(t)
+            else:
+                Ht: qt.Qobj = H
+            if time_dep_L:
+                Lt: qt.Qobj = L(t)
+            else:
+                Lt = L
+            LdagLt: qt.Qobj = Lt.dag() * Lt
+
+            rho_k = rho_ks[-1]
+            rho = rho_t[j]
+            if isinstance(rho_k, list):
+                rho_k = rho_k[j]
+
+            const_term: qt.Qobj = Lt * rho_k * Lt.dag()
+            rho_t[j + 1] = rho_t[j] - dt*(1j * qt.commutator(Ht, rho, 'normal')
+                                          + 0.5 * qt.commutator(LdagLt, rho, 'anti')
+                                          - const_term)
+
+            for k, e in enumerate(e_ops):
+                if isinstance(e, qt.QobjEvo):
+                    e_ops_t[k][j] = qt.expect(rho_t[j], e(t))
+                else:
+                    e_ops_t[k][j]= qt.expect(rho_t[j], e)
+
+        res.states = rho_t[0:nT]
+        res.expect = e_ops_t
+        rho_ks.append(rho_t)
+        results.append(res)
     return results
