@@ -93,7 +93,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
                          pulse_options: Union[Tuple[LineOptions, LineOptions],
                                               List[Tuple[LineOptions, LineOptions]]],
                          contents: Union[np.ndarray, List[np.ndarray]],
-                         content_options: Union[LineOptions]):
+                         content_options: Union[LineOptions, List[LineOptions]]):
     """
     Plots the system contents, as in Kiilerich's short paper. First plot is the pulse modes, next is the g(t)
     coefficients. Last are the mode contents
