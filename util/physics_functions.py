@@ -328,22 +328,20 @@ def get_odd_schrodinger_cat_state(N: int, alpha: complex) -> qt.Qobj:
     return odd_cat_state
 
 
-"""
-THE TWO FOLLOWING FUNCTION ARE NOT YET FINISHED!
-
-Especially the final function, as it does not work
-"""
-
-
-def get_closest_index(t, times):
-    for i, time in enumerate(times):
-        if t <= time:
-            return i
-    return len(times) - 1
-
-
 def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo], L: Union[qt.Qobj, qt.QobjEvo], psi: qt.Qobj,
-                              e_ops: List[qt.Qobj], times: np.ndarray, n: int) -> List[qt.solver.Result]:
+                              e_ops: List[Union[qt.Qobj, qt.QobjEvo]],
+                              times: np.ndarray, n: int) -> List[qt.solver.Result]:
+    """
+    Performs the quantum trajectory method, where each loss of quantum content is accounted for (see Niels Munch
+    Mikkelsen's Bachelor thesis)
+    :param H: The Hamiltonian to time-evolve. Use QObjEvo if time-dependent
+    :param L: The Lindblad loss term. So far only possible to have one loss term. Use QObjEvo if time-dependent
+    :param psi: The initial state
+    :param e_ops: A list of observables to take expectation value of at each time step. Use QObjEvo if time-dependent
+    :param times: A list of the times to evaluate state and expectation values at
+    :param n: The total number of lost quanta to be accounted for
+    :return: A list of qutip Result objects for each n
+    """
     if psi.isket:
         dm = qt.ket2dm(psi)  # Density matrix of initial state
     else:
@@ -395,7 +393,7 @@ def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo], L: Union[qt.Qobj, q
                 if isinstance(e, qt.QobjEvo):
                     e_ops_t[k][j] = qt.expect(rho_t[j], e(t))
                 else:
-                    e_ops_t[k][j]= qt.expect(rho_t[j], e)
+                    e_ops_t[k][j] = qt.expect(rho_t[j], e)
 
         res.states = rho_t[0:nT]
         res.expect = e_ops_t
