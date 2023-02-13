@@ -1,5 +1,4 @@
 import qutip as qt
-import numpy as np
 import SLH.network as nw
 import util.plots as plots
 from util.quantumsystem import QuantumSystem
@@ -82,7 +81,7 @@ def hypothesis_testing(system: QuantumSystem, plot=False):
     total_system: nw.Component = system.create_component()
     result: qt.solver.Result = qt.mcsolve(total_system.H, system.psi0, times, total_system.get_Ls(),
                                           system.get_expectation_observables(), ntraj=1,
-                                          options=qt.Options(store_states=True, seeds=[0]))
+                                          options=qt.Options(store_states=True))
     measurement_times = result.col_times[0]
     measurements = [0 for _ in times]
     for measurement_time in measurement_times:
