@@ -9,6 +9,7 @@ from scipy.integrate import trapz
 import SLH.network as nw
 from util.quantumsystem import QuantumSystem
 import util.plots as plots
+from util.plots import SubPlotOptions, LineOptions
 from typing import Callable, List, Any, Tuple, Optional, Union
 
 
@@ -170,6 +171,90 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
     return result
 
 
+def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo],
+                              Ls: List[Union[qt.Qobj, qt.QobjEvo]],
+                              Ls_mon: List[Union[qt.Qobj, qt.QobjEvo]],
+                              psi: qt.Qobj,
+                              e_ops: List[Union[qt.Qobj, qt.QobjEvo]],
+                              times: np.ndarray, n: int) -> List[qt.solver.Result]:
+    """
+    Performs the quantum trajectory method, where each loss of quantum content is accounted for (see Niels Munch
+    Mikkelsen's Bachelor thesis)
+    :param H: The Hamiltonian to time-evolve. Use QObjEvo if time-dependent
+    :param Ls: List of the Lindblad loss terms not monitored. Use QObjEvo if time-dependent
+    :param Ls_mon: List of the Lindblad loss terms that are monitored. These terms are monitored for how many quanta
+                   decays through these channels Use QObjEvo if time-dependent
+    :param psi: The initial state
+    :param e_ops: A list of observables to take expectation value of at each time step. Use QObjEvo if time-dependent
+    :param times: A list of the times to evaluate state and expectation values at
+    :param n: The total number of lost quanta to be accounted for
+    :return: A list of qutip Result objects for each n
+    """
+    if psi.isket:
+        dm = qt.ket2dm(psi)  # Density matrix of initial state
+    else:
+        dm = psi
+
+    time_dep_H = isinstance(H, qt.QobjEvo)
+    time_dep_Ls = [False for _ in Ls]
+    time_dep_Ls_mon = [False for _ in Ls_mon]
+    for l, L in enumerate(Ls):
+        time_dep_Ls[l] = isinstance(L, qt.QobjEvo)
+    for l, L_mon in enumerate(Ls_mon):
+        time_dep_Ls_mon[l] = isinstance(L_mon, qt.QobjEvo)
+
+    T = times[-1]
+    nT = len(times)
+    dt = T/nT
+
+    rho_ks = [0]
+    results = []
+
+    for i in range(n + 1):
+        res = qt.solver.Result()
+        res.times = times
+        rho_t = [0 for _ in range(nT + 1)]
+        if i == 0:
+            rho_t[0] = dm
+        else:
+            rho_t[0] = dm*0
+        e_ops_t = [[None for _ in range(nT)] for _ in e_ops]
+
+        for j, t in enumerate(times):
+            if time_dep_H:
+                Ht: qt.Qobj = H(t)
+            else:
+                Ht: qt.Qobj = H
+            Lts = [L(t) if time_dep_Ls[l] else L for l, L in enumerate(Ls)]
+            Lts_mon = [L_mon(t) if time_dep_Ls_mon[l] else L_mon for l, L_mon in enumerate(Ls_mon)]
+
+            rho_k = rho_ks[-1]
+            rho = rho_t[j]
+            if isinstance(rho_k, list):
+                rho_k = rho_k[j]
+
+            out: qt.Qobj = 1j * qt.commutator(Ht, rho, 'normal')
+            for Lt in Lts:
+                out += 0.5 * qt.commutator(Lt.dag()*Lt, rho, 'anti')
+                out -= Lt * rho * Lt.dag()
+            for Lt_mon in Lts_mon:
+                out += 0.5 * qt.commutator(Lt_mon.dag()*Lt_mon, rho, 'anti')
+                out -= Lt_mon * rho_k * Lt_mon.dag()
+            rho_t[j + 1] = rho_t[j] - dt*out
+
+            for k, e in enumerate(e_ops):
+                if isinstance(e, qt.QobjEvo):
+                    e_ops_t[k][j] = qt.expect(rho_t[j], e(t))
+                else:
+                    e_ops_t[k][j] = qt.expect(rho_t[j], e)
+
+        res.states = rho_t[0:nT]
+        res.expect = e_ops_t
+        rho_ks.append(rho_t)
+        results.append(res)
+    return results
+
+
 """Functions for running interferometers"""
 
 
@@ -199,11 +284,13 @@ def run_interferometer(interferometer: QuantumSystem, plot: bool = True) -> qt.s
     return result
 
 
-def run_autocorrelation(interferometer: QuantumSystem):
+def run_autocorrelation(interferometer: QuantumSystem, n: int=6, trim: bool=False):
     """
     Calculates the autocorrelation functions on all output channels of an interferometer, to find the pulse modes and
     content of the pulse mode at each interferometer output
     :param interferometer: The interferometer to find the output from
+    :param n: The number of most populated orthogonal output modes to produce
+    :param trim: Whether to trim modes with less than 0.001 photons
     """
     psi0 = interferometer.psi0
     times = interferometer.times
@@ -211,10 +298,93 @@ def run_autocorrelation(interferometer: QuantumSystem):
 
     Ls: List[qt.QobjEvo] = total_system.get_Ls()
     for L in Ls:
-        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=6)
+        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=n, trim=trim)
         #with open(f"output_modes/exact_simple_interferometer_1_photons.pk1", "wb") as file:
         #    pickle.dump(vecs, file)
         plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
+
+
+def run_quantum_trajectory(quantum_system: QuantumSystem, n: int, plot=False):
+    """
+    Finds the quantum trajectory for each number of quanta lost to output modes for each L in the component of the
+    quantum system
+    :param quantum_system: The quantum system to run the method on
+    :param n: The total number of lost quanta to be accounted for
+    :param plot: Whether to plot the result or not
+    :return: A list of lists of the results, A list for each L containing a list for each lost quantum
+    """
+    total_system: nw.Component = quantum_system.create_component()
+    Ls = total_system.get_Ls()
+    all_results = []
+    for l, L in enumerate(Ls):
+        Ls_other = []
+        for k in range(len(Ls)):
+            if l != k:
+                Ls_other.append(Ls[k])
+        results: List[qt.solver.Result] = quantum_trajectory_method(total_system.H,
+                                                                    Ls_other,
+                                                                    [L],
+                                                                    quantum_system.psi0,
+                                                                    quantum_system.get_expectation_observables(),
+                                                                    quantum_system.times,
+                                                                    n)
+        all_results.append(results)
+        if plot:
+            for i, result in enumerate(results):
+                no_of_quanta = result.expect[-1][-1]
+                print(f"Prob. of {i} number of quanta is {no_of_quanta}")
+            xs_list = [[quantum_system.times for _ in res.expect] for res in results]
+            ys_list = [result.expect for result in results]
+            pulse_options, content_options = quantum_system.get_plotting_options()
+            content_options_list = [content_options for _ in results]
+            subplot_options_list = [SubPlotOptions(xlabel="times", ylabel=f"content {i}") for i in range(n+1)]
+            plots.simple_subplots(xs_list, ys_list, content_options_list, subplot_options_list,
+                                  title='quantum trajectory')
+    return all_results
+
+
+def run_multiple_quantum_trajectories(quantum_system: QuantumSystem, n: int,
+                                      taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):
+    nT = len(quantum_system.times)
+    no_of_Ls = len(quantum_system.create_component().get_Ls())
+
+    all_no_of_quanta = [[[] for _ in range(n + 1)] for _ in range(no_of_Ls)]
+    for k in range(len(taus)):
+        print(f"Iteration: {k}")
+        tau = taus[k]
+        tp = tps[k]
+        T = Ts[k]
+        quantum_system.redefine_pulse_args([tp, tau])
+        quantum_system.times = np.linspace(0, T, nT)
+
+        total_system: nw.Component = quantum_system.create_component()
+        Ls = total_system.get_Ls()
+        all_results = []
+        for l, L in enumerate(Ls):
+            Ls_other = []
+            for k in range(len(Ls)):
+                if l != k:
+                    Ls_other.append(Ls[k])
+            results: List[qt.solver.Result] = quantum_trajectory_method(total_system.H,
+                                                                        Ls_other,
+                                                                        [L],
+                                                                        quantum_system.psi0,
+                                                                        quantum_system.get_expectation_observables(),
+                                                                        quantum_system.times,
+                                                                        n)
+            all_results.append(results)
+            for i, result in enumerate(results):
+                no_of_quanta = result.expect[-1][-1]
+                all_no_of_quanta[l][i].append(no_of_quanta)
+    xs_list = [[taus for _ in range(n + 1)] for _ in all_no_of_quanta]
+    ys_list = [[no_of_quantas[i] for i in range(n + 1)] for no_of_quantas in all_no_of_quanta]
+    content_options_list = [[LineOptions(linetype="-", linewidth=4, color="r", label=f"prob. 0 quanta"),
+                             LineOptions(linetype=":", linewidth=4, color="g", label=f"prob. 1 quanta"),
+                             LineOptions(linetype="--", linewidth=4, color="b", label=f"prob. 2 quanta")]
+                            for _ in all_no_of_quanta]
+    subplot_options_list = [SubPlotOptions(xlabel="taus", ylabel=f"arm {i}") for i in range(len(all_no_of_quanta))]
+    plots.simple_subplots(xs_list, ys_list, content_options_list, subplot_options_list,
+                          title='quantum trajectory for each arm')
 
 
 def run_multiple_tau(interferometer: QuantumSystem, taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):
@@ -326,77 +496,3 @@ def get_odd_schrodinger_cat_state(N: int, alpha: complex) -> qt.Qobj:
     """
     odd_cat_state: qt.Qobj = (qt.coherent(N, alpha) - qt.coherent(N, -alpha)) / np.sqrt(2*(1 - np.exp(-2*alpha**2)))
     return odd_cat_state
-
-
-def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo], L: Union[qt.Qobj, qt.QobjEvo], psi: qt.Qobj,
-                              e_ops: List[Union[qt.Qobj, qt.QobjEvo]],
-                              times: np.ndarray, n: int) -> List[qt.solver.Result]:
-    """
-    Performs the quantum trajectory method, where each loss of quantum content is accounted for (see Niels Munch
-    Mikkelsen's Bachelor thesis)
-    :param H: The Hamiltonian to time-evolve. Use QObjEvo if time-dependent
-    :param L: The Lindblad loss term. So far only possible to have one loss term. Use QObjEvo if time-dependent
-    :param psi: The initial state
-    :param e_ops: A list of observables to take expectation value of at each time step. Use QObjEvo if time-dependent
-    :param times: A list of the times to evaluate state and expectation values at
-    :param n: The total number of lost quanta to be accounted for
-    :return: A list of qutip Result objects for each n
-    """
-    if psi.isket:
-        dm = qt.ket2dm(psi)  # Density matrix of initial state
-    else:
-        dm = psi
-
-    time_dep_H = isinstance(H, qt.QobjEvo)
-    time_dep_L = isinstance(L, qt.QobjEvo)
-
-    T = times[-1]
-    nT = len(times)
-    dt = T/nT
-
-    rho_ks = [0]
-    results = []
-
-    for i in range(n):
-        print(f"Starting {i} iteration")
-        res = qt.solver.Result()
-        res.times = times
-        rho_t = [0 for _ in range(nT + 1)]
-        if i == 0:
-            rho_t[0] = dm
-        else:
-            rho_t[0] = dm*0
-        e_ops_t = [[None for _ in range(nT)] for _ in e_ops]
-
-        for j, t in enumerate(times):
-            if time_dep_H:
-                Ht: qt.Qobj = H(t)
-            else:
-                Ht: qt.Qobj = H
-            if time_dep_L:
-                Lt: qt.Qobj = L(t)
-            else:
-                Lt = L
-            LdagLt: qt.Qobj = Lt.dag() * Lt
-
-            rho_k = rho_ks[-1]
-            rho = rho_t[j]
-            if isinstance(rho_k, list):
-                rho_k = rho_k[j]
-
-            const_term: qt.Qobj = Lt * rho_k * Lt.dag()
-            rho_t[j + 1] = rho_t[j] - dt*(1j * qt.commutator(Ht, rho, 'normal')
-                                          + 0.5 * qt.commutator(LdagLt, rho, 'anti')
-                                          - const_term)
-
-            for k, e in enumerate(e_ops):
-                if isinstance(e, qt.QobjEvo):
-                    e_ops_t[k][j] = qt.expect(rho_t[j], e(t))
-                else:
-                    e_ops_t[k][j] = qt.expect(rho_t[j], e)
-
-        res.states = rho_t[0:nT]
-        res.expect = e_ops_t
-        rho_ks.append(rho_t)
-        results.append(res)
-    return results
