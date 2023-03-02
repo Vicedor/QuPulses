@@ -283,7 +283,7 @@ class Component:
     A component for the SLH-Network
     """
 
-    def __init__(self, S: MatrixOperator, L: MatrixOperator, H: Union[complex, qt.Qobj]):
+    def __init__(self, S: MatrixOperator, L: MatrixOperator, H: Union[complex, qt.Qobj, qt.QobjEvo]):
         """
         Initializes a component with the given SLH triple
         :param S: The scattering matrix operator

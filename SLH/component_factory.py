@@ -16,7 +16,7 @@ def create_cavity(I: qt.Qobj, a: qt.Qobj, g: Union[float, Callable[[float], floa
     :param w0: The energy spacing of the modes in the cavity
     :return: An SLH network component of a cavity with the given parameters
     """
-    if isinstance(g, float):
+    if isinstance(g, float) or isinstance(g, int):
         a_t: qt.Qobj = g * a
     else:
         a_t: qt.QobjEvo = qt.QobjEvo([[a, lambda t, args: np.conjugate(g(t))]])

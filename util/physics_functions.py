@@ -255,28 +255,35 @@ def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo],
     return results
 
 
-"""Functions for running interferometers"""
+"""Functions for running Quantum Systems"""
 
 
-def run_interferometer(interferometer: QuantumSystem, plot: bool = True) -> qt.solver.Result:
+def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.solver.Result:
     """
     Runs an interferometer, with an SLH-component, pulse-shapes and initial states along with some defined operators
     to get expectation values of. Plots the final result
-    :param interferometer: The interferometer to time-evolve
+    :param quantum_system: The interferometer to time-evolve
     :param plot: Boolean of whether to plot the result
     """
-    pulses = interferometer.pulses
-    psi0 = interferometer.psi0
-    times = interferometer.times
-    pulse_options, content_options = interferometer.get_plotting_options()
-    total_system: nw.Component = interferometer.create_component()
-    e_ops: List[qt.Qobj] = interferometer.get_expectation_observables()
+    pulses = quantum_system.pulses
+    psi0 = quantum_system.psi0
+    times = quantum_system.times
+    pulse_options, content_options = quantum_system.get_plotting_options()
+    total_system: nw.Component = quantum_system.create_component()
+    e_ops: Union[List[qt.Qobj], Callable] = quantum_system.get_expectation_observables()
 
     # Test plotting options
     assert len(pulse_options) == len(pulses)
-    assert len(e_ops) == len(content_options)
+    if isinstance(e_ops, Callable):
+        # TODO: Implement check of length of output from function
+        pass
+    else:
+        assert len(e_ops) == len(content_options)
 
     result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
+
+    if isinstance(e_ops, Callable):
+        result.expect = convert_time_dependent_e_ops_list(result, times)
 
     if plot:
         plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
@@ -362,9 +369,9 @@ def run_multiple_quantum_trajectories(quantum_system: QuantumSystem, n: int,
         all_results = []
         for l, L in enumerate(Ls):
             Ls_other = []
-            for k in range(len(Ls)):
-                if l != k:
-                    Ls_other.append(Ls[k])
+            for j in range(len(Ls)):
+                if l != j:
+                    Ls_other.append(Ls[j])
             results: List[qt.solver.Result] = quantum_trajectory_method(total_system.H,
                                                                         Ls_other,
                                                                         [L],
@@ -496,3 +503,17 @@ def get_odd_schrodinger_cat_state(N: int, alpha: complex) -> qt.Qobj:
     """
     odd_cat_state: qt.Qobj = (qt.coherent(N, alpha) - qt.coherent(N, -alpha)) / np.sqrt(2*(1 - np.exp(-2*alpha**2)))
     return odd_cat_state
+
+
+"""Helper functions"""
+
+
+def convert_time_dependent_e_ops_list(result: qt.solver.Result, times: np.ndarray) -> List[List]:
+    nT = len(times)
+    expect = [[0 for _ in range(nT)] for _ in range(len(result.expect[0]))]
+
+    for i, t in enumerate(times):
+        for j in range(len(result.expect[0])):
+            expect[j][i] = result.expect[i][j]
+
+    return expect

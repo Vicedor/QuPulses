@@ -29,18 +29,21 @@ class LineOptions:
         self.label: str = label
 
 
-def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], label_list: List[str],
-                x_label: str, y_label: str, title: str):
+def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], line_options: List[LineOptions],
+                plot_options: SubPlotOptions, title: str):
     plt.figure()
     for i in range(len(xs_list)):
-        if i == 0:
-            plt.plot(xs_list[i], ys_list[i], linewidth=5, label=label_list[i])
-        else:
-            plt.plot(xs_list[i], ys_list[i], linewidth=2, label=label_list[i])
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
+        plt.plot(xs_list[i], ys_list[i], linewidth=line_options[i].linewidth, color=line_options[i].color,
+                 label=line_options[i].label)
+    plt.xlabel(plot_options.xlabel)
+    plt.ylabel(plot_options.ylabel)
     plt.title(title)
-    plt.legend()
+    plt.legend(loc=plot_options.legendloc, frameon=False)
+    plt.grid()
+    if plot_options.xlim is not None:
+        plt.xlim(plot_options.xlim)
+    if plot_options.ylim is not None:
+        plt.ylim(plot_options.ylim)
     plt.show()
 
 

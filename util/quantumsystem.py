@@ -7,7 +7,7 @@ import numpy as np
 from abc import ABCMeta, abstractmethod
 import SLH.network as nw
 import util.pulse as p
-from typing import List, Any
+from typing import List, Any, Callable, Union
 
 
 class QuantumSystem(metaclass=ABCMeta):
@@ -63,7 +63,7 @@ class QuantumSystem(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_expectation_observables(self) -> List[qt.Qobj]:
+    def get_expectation_observables(self) -> Union[List[qt.Qobj], Callable]:
         """
         Gets a list of the observables to evaluate the expectation value of at different times in the time-evolution
         :return: The list of observables to get the expectation values of
