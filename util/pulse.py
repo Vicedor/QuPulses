@@ -28,13 +28,28 @@ class Pulse:
         """
         if self.shape == gaussian:
             u = m.gaussian(*args)
-            g = m.gaussian_integral(*args)
+            g = m.gaussian_squared_integral(*args)
         elif self.shape == gaussian_sine:
             u = m.gaussian_sine(*args)
             g = m.gaussian_sine_integral(*args)
         elif self.shape == filtered_gaussian:
             u = m.filtered_gaussian(*args)
             g = m.filtered_gaussian_integral(*args)
+        elif self.shape == n_filtered_gaussian:
+            u = m.n_filtered_gaussian(*args)
+            g = m.n_filtered_gaussian_integral(*args)
+        elif self.shape == exponential:
+            u = m.exponential(*args)
+            g = m.exponential_integral(*args)
+        elif self.shape == frequency_mod_gaussian:
+            u = m.freq_mod_gaussian(*args)
+            g = m.gaussian_squared_integral(args[0], args[1])
+        elif self.shape == two_modes_gaussian:
+            u = m.gaussian(*args)
+            g = m.two_mode_integral(*args)
+        elif self.shape == two_modes_sine:
+            u = m.gaussian_sine(*args)
+            g = m.two_mode_integral(*args)
         else:
             raise ValueError(self.shape + " is not a defined pulse mode.")
         return u, g
@@ -53,7 +68,10 @@ class Pulse:
         :param t: The time at which the function is evaluated
         :return: The value of g_u(t) at the specified time
         """
+        real = False
         temp = np.conjugate(self.u(t))
+        if np.imag(temp) == 0:
+            real = True
         # Divide by the integral of u(t) only if u(t) is not very small (to avoid numerical instability)
         if abs(temp) >= epsilon:
             if self.in_going:
@@ -61,6 +79,8 @@ class Pulse:
             else:
                 temp = - temp / np.sqrt(self._g(t))
         # If t=0 the out_going g(t) function is infinite, so set it to 0 to avoid numerical instability
-        if not self.in_going and t == 0:
+        if not self.in_going and abs(temp) >= 1000000:
             temp = 0
+        if real:
+            temp = np.real(temp)
         return temp
