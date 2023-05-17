@@ -148,11 +148,7 @@ def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any
     :return: The expectation values of the number operators for the ingoing pulse, outgoing pulse and system excitations
              in that order
     """
-    if psi.isket:
-        dm = qt.ket2dm(psi)  # Density matrix of initial state
-    else:
-        dm = psi
-    output = qt.mesolve(f, dm, tlist=times, c_ops=c_ops, e_ops=e_ops,
+    output = qt.mesolve(f, psi, tlist=times, c_ops=c_ops, e_ops=e_ops, progress_bar=True,
                         options=qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6))
     return output
 
@@ -174,7 +170,8 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
     if system.is_L_temp_dep():
         result = integrate_master_equation(system.liouvillian, psi, c_ops=[], e_ops=e_ops, times=times)
     else:
-        result = integrate_master_equation(system.H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times)
+        H = system.H
+        result = integrate_master_equation(H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times)
     print(f"Finished in {time.time() - t1} seconds!")
     return result
 
