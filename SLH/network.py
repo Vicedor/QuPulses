@@ -336,12 +336,29 @@ class Component:
                                                              L_x.dag() * I_S_xy_dag_op * (S_y.dag() * self.L).convert_to_qobj())
         return Component(S_red, L_red, H_red)
 
-    def get_Ls(self) -> List[qt.QobjEvo]:
+    def get_Ls(self) -> List[Union[qt.Qobj, qt.QobjEvo]]:
         """
         Gets the Lindblad operators as a list
         :return: The Lindblad operators as a list
         """
-        return [row[0] for row in self.L.array]
+        all_zero = True
+        for row in self.L.array:
+            if row != 0:
+                all_zero = False
+        if all_zero:
+            return []
+        else:
+            return [row[0] for row in self.L.array]
+
+    def is_L_temp_dep(self) -> bool:
+        """
+        Checks whether any of the Loss operators are time-dependent
+        :return: boolean of whether any of the L's are time-dependent
+        """
+        for L in self.get_Ls():
+            if isinstance(L, qt.QobjEvo):
+                return True
+        return False
 
     def liouvillian(self, t: float, args) -> qt.Qobj:
         """
@@ -349,8 +366,12 @@ class Component:
         total component for the whole SLH-network
         :return: The liouvillian ready to use for a master equation solver
         """
-        Ls = [row[0](t) for row in self.L.array]
-        return qt.liouvillian(H=self.H(t), c_ops=Ls)
+        Ls = [row[0](t) if isinstance(row[0], qt.QobjEvo) else row[0] for row in self.L.array]
+        if isinstance(self.H, qt.QobjEvo):
+            H = self.H(t)
+        else:
+            H = self.H
+        return qt.liouvillian(H=H, c_ops=Ls)
 
 
 def series_product(component1: Component, component2: Component) -> Component:

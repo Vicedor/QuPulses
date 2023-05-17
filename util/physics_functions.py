@@ -2,6 +2,7 @@
 Implements several physics functions often used
 """
 import time
+import sys
 import qutip as qt
 import numpy as np
 from numpy import ndarray
@@ -33,10 +34,13 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
         return qt.expect(b_op(t), state)
 
     for t_idx, rho in enumerate(rhos):
+        sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
         ex = integrate_master_equation(liouvillian=liouvillian, psi=a_op(times[t_idx]) * rho,
                                        e_ops=[b_op_t], times=times[t_idx:]).expect[0]
         autocorr_matrix[t_idx, t_idx:] = ex
         autocorr_matrix[t_idx:, t_idx] = ex
+        sys.stdout.flush()
+    print("\n")
     return autocorr_matrix
 
 
@@ -132,12 +136,13 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
     return autocorr_mat, vals, vecs
 
 
-def integrate_master_equation(liouvillian: Callable[[float, any], qt.Qobj], psi: qt.Qobj,
-                              e_ops: List[qt.Qobj], times: np.ndarray) -> qt.solver.Result:
+def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any], qt.Qobj]], psi: qt.Qobj,
+                              c_ops: List[qt.Qobj], e_ops: List[qt.Qobj], times: np.ndarray) -> qt.solver.Result:
     """
     Integrates the master equation for the system specifications specified in the setup.py file
-    :param liouvillian: A liouvillian object containing the Hamiltonian and Lindblad operators
+    :param f: A  liouvillian object containing the Hamiltonian and Lindblad operators
     :param psi: The initial state as a ket
+    :param c_ops: The collapse operators for the system
     :param e_ops: The observables to be tracked during the time-evolution
     :param times: An array of the times to evaluate the observables at
     :return: The expectation values of the number operators for the ingoing pulse, outgoing pulse and system excitations
@@ -147,7 +152,7 @@ def integrate_master_equation(liouvillian: Callable[[float, any], qt.Qobj], psi:
         dm = qt.ket2dm(psi)  # Density matrix of initial state
     else:
         dm = psi
-    output = qt.mesolve(liouvillian, dm, tlist=times, c_ops=[], e_ops=e_ops,
+    output = qt.mesolve(f, dm, tlist=times, c_ops=c_ops, e_ops=e_ops,
                         options=qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6))
     return output
 
@@ -166,7 +171,10 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
     """
     print("Initializing simulation")
     t1 = time.time()
-    result = integrate_master_equation(system.liouvillian, psi, e_ops, times)
+    if system.is_L_temp_dep():
+        result = integrate_master_equation(system.liouvillian, psi, c_ops=[], e_ops=e_ops, times=times)
+    else:
+        result = integrate_master_equation(system.H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times)
     print(f"Finished in {time.time() - t1} seconds!")
     return result
 
