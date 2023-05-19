@@ -11,16 +11,19 @@ from typing import List, Any, Callable, Union
 
 
 class QuantumSystem(metaclass=ABCMeta):
-    def __init__(self, psi0: qt.Qobj, pulses: List[p.Pulse], times: np.ndarray):
+    def __init__(self, psi0: qt.Qobj, pulses: List[p.Pulse], times: np.ndarray,
+                 options: qt.Options = qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6)):
         """
         Initializes the Quantum System object with a specific initial state, pulse shape and array of times
         :param psi0: The initial state for the system
         :param pulses: The pulses used in the quantum system
         :param times: An array of times at which to evaluate the expectation values and states of the system
+        :param options: Options for the integrator as a qutip Options object
         """
         self._psi0: qt.Qobj = psi0
         self._pulses: List[p.Pulse] = pulses
         self._times: np.ndarray = times
+        self._options: qt.Options = options
 
     @property
     def pulses(self):
@@ -37,6 +40,14 @@ class QuantumSystem(metaclass=ABCMeta):
     @times.setter
     def times(self, value):
         self._times = value
+
+    @property
+    def options(self):
+        return self._options
+
+    @options.setter
+    def options(self, value):
+        self._options = value
 
     def redefine_pulse_args(self, args):
         """

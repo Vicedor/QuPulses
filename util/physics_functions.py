@@ -137,7 +137,9 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
 
 
 def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any], qt.Qobj]], psi: qt.Qobj,
-                              c_ops: List[qt.Qobj], e_ops: List[qt.Qobj], times: np.ndarray) -> qt.solver.Result:
+                              c_ops: List[qt.Qobj], e_ops: List[qt.Qobj], times: np.ndarray,
+                              options: qt.Options = qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6)
+                              ) -> qt.solver.Result:
     """
     Integrates the master equation for the system specifications specified in the setup.py file
     :param f: A  liouvillian object containing the Hamiltonian and Lindblad operators
@@ -145,17 +147,18 @@ def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any
     :param c_ops: The collapse operators for the system
     :param e_ops: The observables to be tracked during the time-evolution
     :param times: An array of the times to evaluate the observables at
+    :param options: The options for the integrator, as a qutip Options object
     :return: The expectation values of the number operators for the ingoing pulse, outgoing pulse and system excitations
              in that order
     """
     output = qt.mesolve(f, psi, tlist=times, c_ops=c_ops, e_ops=e_ops, progress_bar=True,
-                        options=qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6))
+                        options=options)
     return output
 
 
 def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
                                       e_ops: List[Union[qt.Qobj, Callable[[float, Any], float]]],
-                                      times) -> qt.solver.Result:
+                                      times, options) -> qt.solver.Result:
     """
     Calculates the expectation values and states at all times for a given SLH-component and some operators, by
     time-evolving the system Hamiltonian
@@ -273,6 +276,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.s
     pulses = quantum_system.pulses
     psi0 = quantum_system.psi0
     times = quantum_system.times
+    options = quantum_system.options
     pulse_options, content_options = quantum_system.get_plotting_options()
     total_system: nw.Component = quantum_system.create_component()
     e_ops: Union[List[qt.Qobj], Callable] = quantum_system.get_expectation_observables()
@@ -285,7 +289,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.s
     else:
         assert len(e_ops) == len(content_options)
 
-    result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
+    result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options)
 
     if isinstance(e_ops, Callable):
         result.expect = convert_time_dependent_e_ops_list(result, times)
@@ -408,6 +412,7 @@ def run_multiple_tau(interferometer: QuantumSystem, taus: np.ndarray, tps: np.nd
     :param Ts: A corresponding array of max times, such that the gaussian pulse is contained within t = 0:T
     """
     psi0 = interferometer.psi0
+    options = interferometer.options
 
     arm0_populations = []
     arm1_populations = []
@@ -433,7 +438,7 @@ def run_multiple_tau(interferometer: QuantumSystem, taus: np.ndarray, tps: np.nd
 
         e_ops = [L0dagL0t, L1dagL1t]
 
-        result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
+        result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options)
         arm0_population_t, arm1_population_t = result.expect
 
         arm0_population = sum(arm0_population_t) * (T / nT)  # integrate over L0dagL0
@@ -452,6 +457,7 @@ def run_optimize_squeezed_states(interferometer: QuantumSystem, N: int):
     psi0s = qt.basis(2, 0)  # Initial system state    for xi in xis:
 
     times = interferometer.times
+    options = interferometer.options
     T = times[-1]
     nT = len(times)
 
@@ -471,7 +477,7 @@ def run_optimize_squeezed_states(interferometer: QuantumSystem, N: int):
 
         e_ops = [L0dagL0t, L1dagL1t]
 
-        result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times)
+        result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options)
         arm0_population_t, arm1_population_t = result.expect
 
         arm0_population = sum(arm0_population_t) * (T / nT) / input_photons  # integrate over L0dagL0
