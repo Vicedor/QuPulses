@@ -104,7 +104,8 @@ def main():
                                                       + np.conjugate(v_pulse.g(t)) * av_tot
     """
 
-    result = ph.calculate_expectations_and_states(total_system, psi0, e_ops, times)
+    result = ph.calculate_expectations_and_states(total_system, psi0, e_ops, times,
+                                                  qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6))
     n1, n2, Pe = result.expect
     rho = result.states
 
