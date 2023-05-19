@@ -126,7 +126,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
         g_list = np.zeros(nT, dtype=np.complex_)
         u_list = np.zeros(nT)
         for k in range(0, nT):
-            g_list[k] = pulse.g(times[k]) ** 2  # abs(gu_t(times[k]))
+            g_list[k] = pulse.g(times[k]) ** 2
             u_list[k] = np.real(pulse.u(times[k]))
         u_lists.append(u_list)
         g_lists.append(g_list)
@@ -156,7 +156,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
         top='on',  # ticks along the top edge are off
         labelbottom=False)  # labels along the bottom edge are off
     plt.yticks((0, 4, 8), ('$0.0$', '$4.0$', '$8.0$'))
-    plt.ylim((0, 8))
+    plt.ylim((-8, 8))
 
     plt.subplot(3, 1, 3)
     xs = [times for i in range(len(contents))]
