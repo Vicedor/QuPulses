@@ -343,7 +343,7 @@ class Component:
         """
         all_zero = True
         for row in self.L.array:
-            if row != 0:
+            if row[0] != 0:
                 all_zero = False
         if all_zero:
             return []
