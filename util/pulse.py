@@ -41,6 +41,11 @@ class Pulse:
         elif self.shape == exponential:
             u = m.exponential(*args)
             g = m.exponential_integral(*args)
+        elif self.shape == hermite_gaussian:
+            gauss = m.gaussian(args[0], args[1])
+            hermite = m.normalized_hermite_polynomial(*args)
+            u = lambda t: gauss(t) * hermite(t)
+            g = m.hermite_gaussian_integral(*args)
         elif self.shape == frequency_mod_gaussian:
             u = m.freq_mod_gaussian(*args)
             g = m.gaussian_squared_integral(args[0], args[1])
@@ -50,6 +55,9 @@ class Pulse:
         elif self.shape == two_modes_sine:
             u = m.gaussian_sine(*args)
             g = m.two_mode_integral(*args)
+        elif self.shape == undefined:
+            u = args[0]
+            g = args[1]
         else:
             raise ValueError(self.shape + " is not a defined pulse mode.")
         return u, g
@@ -75,12 +83,28 @@ class Pulse:
         # Divide by the integral of u(t) only if u(t) is not very small (to avoid numerical instability)
         if abs(temp) >= epsilon:
             if self.in_going:
-                temp /= np.sqrt(1 - self._g(t))
+                temp /= np.sqrt(10e-6 + 1 - self._g(t))
             else:
-                temp = - temp / np.sqrt(self._g(t))
+                temp = - temp / np.sqrt(10e-6 + self._g(t))
         # If t=0 the out_going g(t) function is infinite, so set it to 0 to avoid numerical instability
         if not self.in_going and abs(temp) >= 1000000:
             temp = 0
         if real:
             temp = np.real(temp)
         return temp
+
+    def split_g(self, dt, split_between, index) -> Callable[[float], float]:
+        """
+        Splits the g into distinct function, where the pulses take turns of having non-zero g to make their overlap
+        always 0.
+        :param dt: The time interval each function gets to be non-zero
+        :param split_between: The number of pulses to split the time interval between
+        :param index: The index of when it is this pulse's turn to be non-zero
+        :return: A function obeying the splitting of the time
+        """
+        def f(t):
+            if (t // dt) % split_between == index:
+                return self.g(t)
+            else:
+                return 0
+        return f
