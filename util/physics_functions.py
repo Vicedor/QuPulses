@@ -26,7 +26,7 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
     :param b_op: The time-dependent leftmost operator in the autocorrelation function
     :return: A matrix of the autocorrelation function evaluated at t and t'
     """
-    result: qt.solver.Result = integrate_master_equation(liouvillian=liouvillian, psi=psi, e_ops=[], times=times)
+    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=psi, c_ops=[], e_ops=[], times=times)
     rhos: np.ndarray = result.states
     autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
 
@@ -35,8 +35,8 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
 
     for t_idx, rho in enumerate(rhos):
         sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
-        ex = integrate_master_equation(liouvillian=liouvillian, psi=a_op(times[t_idx]) * rho,
-                                       e_ops=[b_op_t], times=times[t_idx:]).expect[0]
+        ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
+                                       e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
         autocorr_matrix[t_idx, t_idx:] = ex
         autocorr_matrix[t_idx:, t_idx] = ex
         sys.stdout.flush()
@@ -48,7 +48,8 @@ def autocorrelation_test(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Q
                          a_op: qt.QobjEvo, b_op: qt.Qobj, b_t: Callable[[float], float]):
     def a_op_t(t: float, state) -> float:
         return qt.expect(a_op(t), state)
-    result: qt.solver.Result = integrate_master_equation(liouvillian=liouvillian, psi=qt.ket2dm(psi)*b_op, e_ops=[a_op_t], times=times)
+    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=qt.ket2dm(psi)*b_op, c_ops=[],
+                                                         e_ops=[a_op_t], times=times)
     ex = result.expect[0]
     autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
     for t_idx1, t1 in enumerate(times):
@@ -112,6 +113,12 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
     """
     autocorr_mat: np.ndarray = get_autocorrelation_function(liouvillian, psi0, a_op=L, b_op=L.dag(), times=times)
 
+    vals, vecs = convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times, n=n, trim=trim)
+
+    return autocorr_mat, vals, vecs
+
+
+def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: ndarray, n: Optional[int] = None, trim: bool = False):
     val, vec = np.linalg.eig(autocorr_mat)
 
     if n is None:
@@ -132,14 +139,13 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
                 vals2.append(v)
         vecs = vecs2
         vals = vals2
-
-    return autocorr_mat, vals, vecs
+    return vals, vecs
 
 
 def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any], qt.Qobj]], psi: qt.Qobj,
                               c_ops: List[qt.Qobj], e_ops: List[qt.Qobj], times: np.ndarray,
-                              options: qt.Options = qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6)
-                              ) -> qt.solver.Result:
+                              options: qt.Options = qt.Options(nsteps=1000000000, store_states=1, atol=1e-8, rtol=1e-6),
+                              verbose=True) -> qt.solver.Result:
     """
     Integrates the master equation for the system specifications specified in the setup.py file
     :param f: A  liouvillian object containing the Hamiltonian and Lindblad operators
@@ -148,17 +154,21 @@ def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any
     :param e_ops: The observables to be tracked during the time-evolution
     :param times: An array of the times to evaluate the observables at
     :param options: The options for the integrator, as a qutip Options object
+    :param verbose: Whether to display a progress bar or not. Default: True
     :return: The expectation values of the number operators for the ingoing pulse, outgoing pulse and system excitations
              in that order
     """
-    output = qt.mesolve(f, psi, tlist=times, c_ops=c_ops, e_ops=e_ops, progress_bar=True,
-                        options=options)
+    if verbose:
+        output = qt.mesolve(f, psi, tlist=times, c_ops=c_ops, e_ops=e_ops, progress_bar=True,
+                            options=options)
+    else:
+        output = qt.mesolve(f, psi, tlist=times, c_ops=c_ops, e_ops=e_ops, options=options)
     return output
 
 
 def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
                                       e_ops: List[Union[qt.Qobj, Callable[[float, Any], float]]],
-                                      times, options) -> qt.solver.Result:
+                                      times, options, verbose=True) -> qt.solver.Result:
     """
     Calculates the expectation values and states at all times for a given SLH-component and some operators, by
     time-evolving the system Hamiltonian
@@ -166,15 +176,19 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
     :param psi: The initial state for the system
     :param e_ops: The operators to get expectation values of
     :param times: An array of the times to get the expectation values and the states
+    :param options: The options for the integrator, as a qutip Options object
+    :param verbose: Whether to display a progress bar or not. Default: True
     :return: A QuTiP result class, containing the expectation values and states at all times
     """
     print("Initializing simulation")
     t1 = time.time()
     if system.is_L_temp_dep():
-        result = integrate_master_equation(system.liouvillian, psi, c_ops=[], e_ops=e_ops, times=times)
+        result = integrate_master_equation(system.liouvillian, psi, c_ops=[], e_ops=e_ops, times=times,
+                                           options=options, verbose=verbose)
     else:
         H = system.H
-        result = integrate_master_equation(H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times)
+        result = integrate_master_equation(H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times, options=options,
+                                           verbose=verbose)
     print(f"Finished in {time.time() - t1} seconds!")
     return result
 
@@ -266,12 +280,14 @@ def quantum_trajectory_method(H: Union[qt.Qobj, qt.QobjEvo],
 """Functions for running Quantum Systems"""
 
 
-def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.solver.Result:
+def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True, verbose: bool = True) -> qt.solver.Result:
     """
     Runs an interferometer, with an SLH-component, pulse-shapes and initial states along with some defined operators
     to get expectation values of. Plots the final result
     :param quantum_system: The interferometer to time-evolve
     :param plot: Boolean of whether to plot the result
+    :param verbose: Whether to display a progress bar or not. Default: True
+    :return: A qutip Result-object with the result of the simulation
     """
     pulses = quantum_system.pulses
     psi0 = quantum_system.psi0
@@ -289,7 +305,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.s
     else:
         assert len(e_ops) == len(content_options)
 
-    result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options)
+    result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options, verbose)
 
     if isinstance(e_ops, Callable):
         result.expect = convert_time_dependent_e_ops_list(result, times)
@@ -300,7 +316,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True) -> qt.s
     return result
 
 
-def run_autocorrelation(interferometer: QuantumSystem, n: int=6, trim: bool=False):
+def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = False):
     """
     Calculates the autocorrelation functions on all output channels of an interferometer, to find the pulse modes and
     content of the pulse mode at each interferometer output
