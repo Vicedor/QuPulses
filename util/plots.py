@@ -33,8 +33,8 @@ def simple_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], line_optio
                 plot_options: SubPlotOptions, title: str):
     plt.figure()
     for i in range(len(xs_list)):
-        plt.plot(xs_list[i], ys_list[i], linewidth=line_options[i].linewidth, color=line_options[i].color,
-                 label=line_options[i].label)
+        plt.plot(xs_list[i], ys_list[i], line_options[i].linetype, linewidth=line_options[i].linewidth,
+                 color=line_options[i].color, label=line_options[i].label)
     plt.xlabel(plot_options.xlabel)
     plt.ylabel(plot_options.ylabel)
     plt.title(title)
