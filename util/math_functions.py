@@ -346,7 +346,7 @@ def inverse_fourier_transform(f: Callable[[float], float], t: float):
     :param t: The time at which to get v(t)
     :return: The inverse Fourier transformed v(t) at given time t
     """
-    f_with_fourier_factor = lambda w, tt: f(w) * np.exp(-1j * w * tt)
+    f_with_fourier_factor = lambda w, tt: f(w) * np.exp(-1j * w * tt) / np.sqrt(2*np.pi)
     f_real = lambda w, tt: np.real(f_with_fourier_factor(w, tt))  # real part
     f_imag = lambda w, tt: np.imag(f_with_fourier_factor(w, tt))  # imaginary part
     return quad(f_real, -np.inf, np.inf, args=(t,))[0] + 1j * quad(f_imag, -np.inf, np.inf, args=(t,))[0]
