@@ -18,7 +18,7 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
                     a_op: qt.QobjEvo, b_op: qt.QobjEvo) -> np.ndarray:
     """
     Calculates the autocorrelation function (eq. 14 in long Kiilerich) as a matrix of t and t'. The a_op and b_op must
-    be time dependent QobjEvo operators. For non-time dependent operators, use qutips own correlation functions
+    be time-dependent QobjEvo operators. For non-time dependent operators, use qutips own correlation functions
     :param liouvillian: The liouvillian to use for time evolution
     :param psi: The initial state
     :param times: An array of the times to evaluate the autocorrelation function
@@ -97,7 +97,7 @@ def get_autocorrelation_function(liouvillian: Callable[[float, Any], qt.Qobj], p
 
 def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt.QobjEvo, psi0: qt.Qobj, times: ndarray,
                              n: Optional[int] = None,
-                             trim: bool = False) -> Tuple[ndarray, List[Any], List[Tuple[ndarray, complex]]]:
+                             trim: bool = False) -> Tuple[ndarray, List[float], List[np.ndarray]]:
     """
     Finds the most populated modes from the autocorrelation function. First the autocorrelation matrix is calculated,
     then it is diagonalized into eigenvalues and eigenvectors. The eigenvectors with the largest eigenvalues
@@ -118,7 +118,8 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
     return autocorr_mat, vals, vecs
 
 
-def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: ndarray, n: Optional[int] = None, trim: bool = False):
+def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: ndarray, n: Optional[int] = None,
+                                          trim: bool = False) -> Tuple[List[float], List[np.ndarray]]:
     val, vec = np.linalg.eig(autocorr_mat)
 
     if n is None:
@@ -316,7 +317,8 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True, verbose
     return result
 
 
-def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = False):
+def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = False)\
+        -> Tuple[List[List[float]], List[List[np.ndarray]]]:
     """
     Calculates the autocorrelation functions on all output channels of an interferometer, to find the pulse modes and
     content of the pulse mode at each interferometer output
@@ -329,11 +331,16 @@ def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = 
     total_system: nw.Component = interferometer.create_component()
 
     Ls: List[qt.QobjEvo] = total_system.get_Ls()
+    vals_in_arms: List[List[float]] = []
+    vecs_in_arms: List[List[np.ndarray]] = []
     for L in Ls:
         autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=n, trim=trim)
+        vals_in_arms.append(vals)
+        vecs_in_arms.append(vecs)
         #with open(f"output_modes/exact_simple_interferometer_1_photons.pk1", "wb") as file:
         #    pickle.dump(vecs, file)
         plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
+    return vals_in_arms, vecs_in_arms
 
 
 def run_quantum_trajectory(quantum_system: QuantumSystem, n: int, plot=False):
