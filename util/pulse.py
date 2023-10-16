@@ -2,9 +2,10 @@
 Implements a quantum pulse with pulse shape u(t) and coupling constant from cavity g(t)
 """
 import numpy as np
+from scipy.integrate import cumulative_trapezoid
 from util.constants import *
 import util.math_functions as m
-from typing import Tuple, Callable
+from typing import Tuple, Callable, List
 
 
 class Pulse:
@@ -108,3 +109,70 @@ class Pulse:
             else:
                 return 0
         return f
+
+
+def _transform_input_pulse_across_cavity(u_target: np.ndarray, u_cavity: np.ndarray, t_list: np.ndarray) -> np.ndarray:
+    """
+    Does the single transformation across one input cavity (equation A14 in Fan's paper).
+    :param u_target: The target pulse shape after the transformation across the cavity (phi_m^(n))
+    :param u_cavity: The pulse shape emitted by the cavity to transform across (phi_n^(n))
+    :param t_list: The list of times for which the pulses are defined
+    :return: The pulse shape to emit to become the target pulse shape after travelling past the cavity (phi_m^(n-1))
+    """
+    mode_overlap = cumulative_trapezoid(u_cavity.conjugate() * u_target, t_list, initial=0)
+    u_cavity_int = cumulative_trapezoid(u_cavity.conjugate() * u_cavity, t_list, initial=0)
+    return u_target + u_cavity * mode_overlap / (1 + epsilon - u_cavity_int)
+
+
+def transform_input_pulses_across_cavities(u_targets: List[np.ndarray], t_list: np.ndarray):
+    """
+    Transforms the target pulse shapes aimed at hitting a given system, into the pulse shapes that must be emitted
+    by the M input virtual cavity in series, to be correctly scattered to the target pulse shape by the cavities
+    in front
+    :param u_targets: The target mode functions to hit the system. First entry is for cavity just before system.
+    Last entry is for cavity furthest from system (so the mode that needs most transformation)
+    :param t_list: The list of times at which the pulse modes are defined.
+    :return: The actual modes to be emitted by the input virtual cavities such that they are transformed into the
+     correct target modes
+    """
+    output_modes = []
+    for i, u in enumerate(u_targets):
+        u_transform = u
+        for j in range(i):
+            u_transform = _transform_input_pulse_across_cavity(u_transform, output_modes[j], t_list)
+        output_modes.append(u_transform)
+    return output_modes
+
+
+def __transform_output_pulse_across_cavity(u_target: np.ndarray, u_cavity: np.ndarray, t_list: np.ndarray) -> np.ndarray:
+    """
+    Does the single transformation across one output cavity (equation A12 in Fan's paper).
+    :param u_target: The target pulse shape after the transformation across the cavity (psi_m^(n-1))
+    :param u_cavity: The pulse shape emitted by the cavity to transform across (psi_n^(n-1))
+    :param t_list: The list of times for which the pulses are defined
+    :return: The pulse shape to emit to become the target pulse shape after travelling past the cavity (phi_m^(n))
+    """
+    mode_overlap = cumulative_trapezoid(u_cavity.conjugate() * u_target, t_list, initial=0)
+    u_cavity_int = cumulative_trapezoid(u_cavity.conjugate() * u_cavity, t_list, initial=0)
+    return u_target - u_cavity * mode_overlap / (epsilon + u_cavity_int)
+
+
+def transform_output_pulses_across_cavities(v_targets: List[np.ndarray], t_list: np.ndarray):
+    """
+    Transforms the target pulse shapes emitted by a given system, into the pulse shapes that must be absorbed
+    by the N output virtual cavity in series, to be correctly scattered to the target pulse shape by the cavities
+    in front
+    :param v_targets: The target mode functions emitted from the system. First entry is for cavity just after system.
+    Last entry is for cavity furthest from system (so the mode that needs most transformation)
+    :param t_list: The list of times at which the pulse modes are defined.
+    :return: The actual modes to be absorbed by the output virtual cavities such that they are transformed into the
+     correct target modes
+    """
+    output_modes = []
+    for i, u in enumerate(v_targets):
+        u_transform = u
+        for j in range(i):
+            u_transform = __transform_output_pulse_across_cavity(u_transform, output_modes[j], t_list)
+        output_modes.append(u_transform)
+    return output_modes
+
