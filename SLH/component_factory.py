@@ -74,3 +74,8 @@ def create_interferometer_with_lower_system(system: nw.Component) -> nw.Componen
     beam_splitter: nw.Component = create_beam_splitter()
     padded_system: nw.Component = nw.padding_top(1, system)
     return nw.series_product(nw.series_product(beam_splitter, padded_system), beam_splitter)
+
+
+def create_squeezing_cavity(I: qt.Qobj, a: qt.Qobj, gamma: float, Delta: float, xi: float) -> nw.Component:
+    return nw.Component(S=nw.MatrixOperator(I), L=nw.MatrixOperator(gamma * a),
+                        H=Delta * a.dag() * a + 0.5j * xi * (a.dag() * a.dag() - a * a))
