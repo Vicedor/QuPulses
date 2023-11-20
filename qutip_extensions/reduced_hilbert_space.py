@@ -1,15 +1,66 @@
 import qutip as qt
 import numpy as np
-from typing import List
+from typing import List, Tuple
 
 
-def create_initial_state(ns: List[int]) -> qt.Qobj:
+def index_map(m: int, N, M) -> List[Tuple[int, int]]:
+    """
+    Maps the indexes of an output operator m into the corresponding input operator indexes for the next iteration
+    :param m: The index of the output operator to map
+    :param N: The number of input oscillators
+    :param M: The number of output oscillators
+    :return: The mapped index
+    """
+    i1 = 2 + (m + N)
+    j1 = 2 + m     # The index for |1>|...1m...> state
+    i2 = 2 + (M + N) + (m + N)
+    j2 = 2 + 2 * M + m   # The index for |0>|...1m...> state
+    i3 = 2 + 2*(M + N) + (m + N)
+    j3 = 2 + 4 * M + m   # The index for |0>|...2m...> state
+    i_pairs = [i1, i2, i3]
+    j_pairs = [j1, j2, j3]
+    return list(zip(i_pairs, j_pairs))
+
+
+def create_initial_state(rho: qt.Qobj, N, M) -> qt.Qobj:
     """
     Creates the initial state of the system given a list of the number of excitation in each oscillator in the order
     two-level-system, 1...N, 1...M. A maximum of 2 excitations are allowed for now
-    :param ns: A list of how many excitations are in each oscillator in the order two-level-system, 1...N, 1...M
-    :return: The initial state
+    :param rho: The output density matrix of the 1...M output oscillators from last iteration
+    :param N: The number of input oscillators
+    :param M: The number of output oscillators
+    :return: The initial density matrix with all modes
     """
+    x_old = N + M
+    Y_old = (x_old + 2) * (x_old + 3) // 2 - 1
+    x_new = 2 * M
+    Y_new = (x_new + 2) * (x_new + 3) // 2 - 1
+    rho0_array = np.zeros([Y_new, Y_new], dtype=np.complex_)
+    rho_data = rho.data
+    print(rho)
+
+    # Deal with atomic state:
+    for i in range(2):
+        for j in range(2):
+            rho0_array[i, j] = rho_data[i, j]
+
+    # Deal with singly and doubly excited states of oscillators
+    for m in range(M):
+        index_pairs = index_map(m, N, M)
+        for pair in index_pairs:
+            for i in range(M):
+                for j in range(M):
+                    rho0_array[pair[1] + i, pair[1] + j] = rho_data[pair[0] + i, pair[0] + j]
+
+    # Deal with pairs of excited states
+    old = 2 + 3*(N + M) + sum([N + M - k - 1 for k in range(N)])
+    new = 2 + 3*(M + M)
+    print(new)
+    for i in range(Y_old - old):
+        for j in range(Y_old - old):
+            rho0_array[new + i, new + j] = rho_data[old + i, old + j]
+
+    return qt.Qobj(rho0_array)
 
 
 def get_N_plus_M_oscillator_space(N: int, M: int, n: int = 2) -> List[qt.Qobj]:
