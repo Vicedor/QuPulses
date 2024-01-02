@@ -31,6 +31,41 @@ def create_bs_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, phi: float) -> q
     return (1j * theta * (a.dag() * b * np.exp(1j * phi) + a * b.dag() * np.exp(-1j * phi))).expm(method='sparse')
 
 
+def create_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float) -> qt.Qobj:
+    """
+    Creates a phase interaction with a relative phase theta between two modes
+    :param a: Annihilation operator for mode 1
+    :param b: Annihilation operator for mode 2
+    :param theta: Relative phase
+    :return: QuTip operator for the phase interaction
+    """
+    return (1j * theta * (a.dag() * a - b.dag() * b)).expm(method='sparse')
+
+
+def create_bs_and_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, psi: float, delta: float) -> qt.Qobj:
+    """
+    Creates a beam splitter interaction with relative phases between them. This implements a beam splitter
+    interaction on states from the operator relation
+
+    U = {cos(theta) * exp(i * alpha)    , i * sin(theta) * exp(i * beta),
+         i * sin(theta) * exp(-i * beta), cos(theta) * exp(-i * alpha)   }
+
+    A decomposition is then performed into a pure phase interaction, a pure rotation interaction, and a final pure
+    phase interaction. The phases for the phase interactions are found from the decomposition (see wikipedia page on
+    unitary matrix) to be psi = (alpha + beta) / 2 and delta = (alpha - beta) / 2.
+    :param a: Annihilation operator for mode 1
+    :param b: Annihilation operator for mode 2
+    :param theta: Rotation angle
+    :param psi: First relative phase psi = (alpha + beta) / 2
+    :param delta: Second relative phase delta = (alpha - beta) / 2
+    :return: QuTip operator for the rotation-phase interaction
+    """
+    bs = create_bs_interaction(a, b, theta, 0)
+    p1 = create_phase_interaction(a, b, psi)
+    p2 = create_phase_interaction(a, b, delta)
+    return p1 * bs * p2
+
+
 def rref(matrix: np.ndarray) -> np.ndarray:
     """
     Performs the decomposition of a matrix to reduced row echelon form
@@ -46,31 +81,44 @@ def rref(matrix: np.ndarray) -> np.ndarray:
     return matrix
 
 
-def decompose_unitary(U: np.ndarray) -> List[np.ndarray]:
+def decompose_unitary(U: np.ndarray, right: bool = False) -> List[np.ndarray]:
     """
     decomposes a unitary matrix to a number of 2x2 unitaries. This decomposition follows closely the procedure in
     Nielsen & Chuang.
     :param U: The unitary to be decomposed
-    :return: An array of unitary 2x2 matrices, whose product gives U.
+    :param right: Boolean of whether to decompose from the right (U * U1 * ... * Un = 1) or from the left
+    (Un * ... * U1 * U = 1). If right = True decomposition is performed from the right, otherwise from the left.
+    :return: An array of unitary 2x2 matrices [U1, U2, ..., Un], whose product gives U.
     """
     d = U.shape[0]
     Us = []
     for i in range(d - 2):
         for j in range(i + 1, d):
             Ui = np.identity(d, dtype=np.complex_)
-            a = U[i, i]
-            b = U[j, i]
+            if right:
+                a = U[i, i]
+                b = U[i, j]
+            else:
+                a = U[i, i]
+                b = U[j, i]
             if np.isclose(b, 0 + 0j):
                 if i == d - 1:
                     Ui[i, i] = a.conjugate()
             else:
                 c = np.sqrt(a * a.conjugate() + b * b.conjugate())
                 Ui[i, i] = a.conjugate() / c
-                Ui[i, j] = b.conjugate() / c
-                Ui[j, i] = - b / c
                 Ui[j, j] = a / c
+                if right:
+                    Ui[i, j] = - b / c
+                    Ui[j, i] = b.conjugate() / c
+                else:
+                    Ui[i, j] = b.conjugate() / c
+                    Ui[j, i] = - b / c
             Us.append(Ui.conjugate().T)
-            U = Ui @ U
+            if right:
+                U = U @ Ui
+            else:
+                U = Ui @ U
     Ui = np.identity(d, dtype=np.complex_)
     Ui[d - 2, d - 2] = U[d - 2, d - 2].conjugate()
     Ui[d - 2, d - 1] = U[d - 1, d - 2].conjugate()
@@ -80,11 +128,42 @@ def decompose_unitary(U: np.ndarray) -> List[np.ndarray]:
     return Us
 
 
-def decompose_W_e(W_e: np.ndarray) -> Tuple[List[float], List[float]]:
+def decompose_U(U: np.ndarray) -> Tuple[List[float], List[float], List[float]]:
     """
     Decomposes W_E^dagger into 2x2 rotations using the decompose_unitary function, and then finds the rotation
     parameters for the beam-splitter relations. It is not necessary to decompose U, as only the first mode is
-    non-vacuum and thus it is only necessary to mix that mode with the other vacuum modes. The parameters for these
+    non-vacuum, and thus it is only necessary to mix that mode with the other vacuum modes. The parameters for these
+    transformations can be read directly from U without any decomposition.
+    :param U: The U matrix to be decomposed.
+    :return:
+    """
+    n = U.shape[0]
+    Us = decompose_unitary(U, right=True)
+    m = factorial(n - 1)
+    assert m == len(Us)
+    thetas: List[float] = [0 for _ in range(m)]
+    psis: List[float] = [0 for _ in range(m)]
+    deltas: List[float] = [0 for _ in range(m)]
+
+    k = 0
+    print(Us[3][1, 1])
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            thetas[k] = np.arccos(np.abs(Us[k][i, i]))
+            alpha = phase(Us[k][i, i])
+            beta = phase(1j * Us[k][i, j])
+            psis[k] = (alpha + beta) / 2
+            deltas[k] = (alpha - beta) / 2
+            k += 1
+
+    return thetas, psis, deltas
+
+
+def decompose_W_e(W_e: np.ndarray) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Decomposes W_E^dagger into 2x2 rotations using the decompose_unitary function, and then finds the rotation
+    parameters for the beam-splitter relations. It is not necessary to decompose U, as only the first mode is
+    non-vacuum, and thus it is only necessary to mix that mode with the other vacuum modes. The parameters for these
     transformations can be read directly from U without any decomposition.
     :param W_e: The W_e^dagger matrix to be decomposed.
     :return:
@@ -94,18 +173,22 @@ def decompose_W_e(W_e: np.ndarray) -> Tuple[List[float], List[float]]:
     m = factorial(n - 1)
     assert m == len(Us)
     thetas: List[float] = [0 for _ in range(m)]
-    phis: List[float] = [0 for _ in range(m)]
+    psis: List[float] = [0 for _ in range(m)]
+    deltas: List[float] = [0 for _ in range(m)]
 
     k = 0
     for i in range(n - 1):
         for j in range(i + 1, n):
             thetas[k] = np.arccos(np.abs(Us[k][i, i]))
-            phis[k] = -phase(1j * Us[k][j, i]) - phase(Us[k][i, i])
+            alpha = phase(Us[k][i, i])
+            beta = phase(1j * Us[k][i, j])
+            psis[k] = (alpha + beta) / 2
+            deltas[k] = (alpha - beta) / 2
             if math.isnan(thetas[k]):
                 thetas[k] = 0
             k += 1
 
-    return thetas, phis
+    return thetas, psis, deltas
 
 
 def bloch_messiah(E: np.ndarray, F: np.ndarray, atol=1e-3, rtol=1e-3) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -184,8 +267,8 @@ class SingleModeBlochMessiah:
         coefs, theta_vac = self._get_mode_coefs()
         E_mat, F_mat = self._get_transformation_matrix(coefs)
         scriptU, lambda_E, scriptW_E = bloch_messiah(E_mat, F_mat, atol=self._atol, rtol=self._rtol)
-        rs, thetas, phis = self._get_parameters(scriptU, lambda_E, scriptW_E)
-        rhov = self._transform_state(*rs, *thetas, *phis, theta_vac)
+        rs, thetas, psis, deltas = self._get_parameters(scriptU, lambda_E, scriptW_E)
+        rhov = self._transform_state(*rs, *thetas, *psis, *deltas, theta_vac)
         return rhov
 
     def _get_mode_coefs(self) -> Tuple[List[float], float]:
@@ -212,7 +295,7 @@ class SingleModeBlochMessiah:
         C1 = zeta * np.sqrt(1 - uf.conjugate()*uf) * kh.conjugate()
         D1 = xi * np.sqrt(1 - ug.conjugate() * ug)
 
-        #print('target:', A1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
+        print('target:', A1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
         norm = np.sqrt(A1.conjugate() * A1 - B1.conjugate() * B1 + C1.conjugate() * C1 - D1.conjugate() * D1)
         theta_vac = np.arccos(norm)
         A1 = A1 / norm
@@ -265,14 +348,15 @@ class SingleModeBlochMessiah:
         return E, F
 
     def _get_parameters(self, scriptU: np.ndarray, lambda_E: np.ndarray,
-                       scriptW_E: np.ndarray) -> Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]:
+                       scriptW_E: np.ndarray) -> Tuple[Tuple[float, float], Tuple[float, float],
+                                                       Tuple[float, float], Tuple[float, float]]:
         """
         Finds the parameters for the rotation and squeezing transformations, as described in the main paper eq. 9
         :param scriptU: The first rotation matrix from G. Cariolaro and G. Pierobon (2016) eq. 34.
         :param lambda_E: The squeezing matrix from G. Cariolaro and G. Pierobon (2016) eq. 34.
         :param scriptW_E: The second rotation matrix from G. Cariolaro and G. Pierobon (2016) eq. 34.
         :return: The parameters for the rotation operators and squeezing operators in the order
-        (squeezing 1, squeezing 2), (rotation 1, rotation 2), (phase 1, phase 2)
+        (squeezing 1, squeezing 2), (rotation 1, rotation 2), (phase1 1, phase2 1), (phase1 2, phase2 2)
         """
         # Squeezing parameters
         r1 = np.arccosh(lambda_E[0, 0])
@@ -280,21 +364,31 @@ class SingleModeBlochMessiah:
 
         # Rotation parameters
         theta1 = np.arccos(np.abs(scriptW_E.conjugate().T[0, 0]))
-        phi1 = -phase(1j * scriptW_E.conjugate().T[1, 0]) - phase(scriptW_E.conjugate().T[0, 0])
+        beta1 = -phase(1j * scriptW_E.conjugate().T[1, 0])
+        alpha1 = phase(scriptW_E.conjugate().T[0, 0])
         theta2 = np.arccos(np.abs(scriptU[0, 0]))
-        phi2 = phase(1j * scriptU[0, 1]) - phase(scriptU[0, 0])
-        return (r1, r2), (theta1, theta2), (phi1, phi2)
+        alpha2 = phase(scriptU[0, 0])
+        beta2 = phase(1j * scriptU[0, 1])
 
-    def _transform_state(self, r1, r2, theta1, theta2, phi1, phi2, theta_vac) -> qt.Qobj:
+        psi1 = (alpha1 + beta1) / 2
+        delta1 = (alpha1 - beta1) / 2
+        psi2 = (alpha2 + beta2) / 2
+        delta2 = (alpha2 - beta2) / 2
+
+        return (r1, r2), (theta1, theta2), (psi1, psi2), (delta1, delta2)
+
+    def _transform_state(self, r1, r2, theta1, theta2, psi1, psi2, delta1, delta2, theta_vac) -> qt.Qobj:
         """
         Transforms the input quantum state to the output quantum state using the parameters from the Bloch-Messiah
         decomposition.
         :param r1: Squeezing parameter for mode 1
         :param r2: Squeezing parameter for mode 2
-        :param theta1: Rotation parameter for first rotation
+        :param theta1: Rotation parameter for first rotation.
         :param theta2: Rotation parameter for second rotation
-        :param phi1: Phase parameter for first rotation
-        :param phi2: Phase parameter for second rotation
+        :param psi1: First phase parameter for first relative phase transformation
+        :param psi2: First phase parameter for second relative phase transformation
+        :param delta1: Second phase parameter for first relative phase transformation
+        :param delta2: Second phase parameter for second relative phase transformation
         :param theta_vac: Rotation angle for mixing with vacuum mode in the end
         :return: The output quantum state as a qutip state
         """
@@ -312,8 +406,10 @@ class SingleModeBlochMessiah:
         rho = qt.tensor(rho_u, rho_1)
 
         # Rotate
-        U_au_a1 = create_bs_interaction(au, a1, theta1, phi1)
-        rho_t = U_au_a1 * rho * U_au_a1.dag()
+        U1 = create_phase_interaction(au, a1, delta1)
+        U2 = create_phase_interaction(au, a1, psi1)
+        U_au_a1 = create_bs_interaction(au, a1, theta1, 0)
+        rho_t = U2 * U_au_a1 * U1 * rho * U1.dag() * U_au_a1.dag() * U2.dag()
 
         # Squeeze
         S1: qt.Qobj = qt.tensor(qt.squeeze(self._N, -r1), I)
@@ -321,8 +417,10 @@ class SingleModeBlochMessiah:
         rho_t = S2 * S1 * rho_t * S1.dag() * S2.dag()
 
         # Rotate
-        V_au_a1 = create_bs_interaction(au, a1, theta2, phi2)
-        rho_t = V_au_a1 * rho_t * V_au_a1.dag()
+        V1 = create_phase_interaction(au, a1, delta2)
+        V2 = create_phase_interaction(au, a1, psi2)
+        V_au_a1 = create_bs_interaction(au, a1, theta2, 0)
+        rho_t = V2 * V_au_a1 * V1 * rho_t * V1.dag() * V_au_a1.dag() * V2.dag()
 
         # Mix with vacuum
         rhov = rho_t.ptrace(0)
@@ -377,8 +475,8 @@ class TwoModeBlochMessiah:
         coefs1, coefs2, theta_vac = self._get_mode_coefs()
         E_mat, F_mat = self._get_transformation_matrix(coefs1, coefs2)
         scriptU, lambda_E, scriptW_E = bloch_messiah(E_mat, F_mat, atol=self._atol, rtol=self._rtol)
-        rs, thetas, phis = self._get_parameters(scriptU, lambda_E, scriptW_E)
-        rhov1v2 = self._transform_state(*rs, *thetas, *phis, theta_vac)
+        rs, thetas, phis, deltas = self._get_parameters(scriptU, lambda_E, scriptW_E)
+        rhov1v2 = self._transform_state(*rs, *thetas, *phis, *deltas, theta_vac)
         return rhov1v2
 
     def _get_mode_coefs(self) -> Tuple[List[float], List[float], float]:
@@ -448,7 +546,7 @@ class TwoModeBlochMessiah:
         D1 = xi1 * np.sqrt(1 - ug1.conjugate() * ug1)
         E1 = zeta1 * np.sqrt(1 - uf1.conjugate() * uf1) * np.sqrt(1 - k1h1.conjugate() * k1h1)
 
-        #print('target1:', A1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
+        print('target1:', A1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
 
         "second mode"
 
@@ -478,7 +576,7 @@ class TwoModeBlochMessiah:
         G2 = G2 / norm
         H2 = H2 / norm
 
-        #print('target2:', A2.conjugate() * A2 + 2 * B2.conjugate() * B2 + D2.conjugate() * D2 + F2.conjugate() * F2 + H2.conjugate() * H2)
+        print('target2:', A2.conjugate() * A2 + 2 * B2.conjugate() * B2 + D2.conjugate() * D2 + F2.conjugate() * F2 + H2.conjugate() * H2)
 
         return [A1, C1, E1, B1, D1], [A2, C2, E2, G2, B2, D2, F2, H2], theta_vac
 
@@ -610,6 +708,7 @@ class TwoModeBlochMessiah:
     def _get_parameters(self, U: np.ndarray, lambda_E: np.ndarray,
                         W_E: np.ndarray) -> Tuple[Tuple[float, float, float, float],
                                                   Tuple[List[float], List[float]],
+                                                  Tuple[List[float], List[float]],
                                                   Tuple[List[float], List[float]]]:
         """
         Finds the parameters for the rotation and squeezing transformations, as described in the main paper eq. 9
@@ -617,7 +716,7 @@ class TwoModeBlochMessiah:
         :param lambda_E: The squeezing matrix from G. Cariolaro and G. Pierobon (2016) eq. 34.
         :param W_E: The second rotation matrix from G. Cariolaro and G. Pierobon (2016) eq. 34.
         :return: The parameters for the rotation operators and squeezing operators in the order
-        (squeezings), (rotations), (phases)
+        (squeezings), (rotations), (phases1), (phases2)
         """
         # Squeezing parameters
         r1 = np.arccosh(lambda_E[0, 0])
@@ -625,18 +724,14 @@ class TwoModeBlochMessiah:
         r3 = np.arccosh(lambda_E[2, 2])
         r4 = np.arccosh(lambda_E[3, 3])
 
-        theta3 = np.arcsin(np.abs(U[0, 3]))
-        theta2 = np.arcsin(np.abs(U[0, 2] / np.cos(theta3)))
-        theta1 = np.arccos(np.abs(U[0, 0] / (np.cos(theta2) * np.cos(theta3))))
-        theta1s = [theta1, theta2, theta3]
-        phi3 = phase(1j * U[0, 3])
-        phi2 = phase(1j * U[0, 2])
-        phi1 = phase(1j * U[0, 1]) - phase(U[0, 0])
-        phi1s = [phi1, phi2, phi3]
-        theta2s, phi2s = decompose_W_e(W_E.conjugate().T)
-        return (r1, r2, r3, r4), (theta1s, theta2s), (phi1s, phi2s)
+        W_E = np.exp(1j * phase(W_E.conjugate().T[0, 0])) * W_E
+        theta1s, psi1s, delta1s = decompose_W_e(W_E.conjugate().T)
+        U = np.exp(-1j * phase(U[0, 0])) * U
+        theta2s, psi2s, delta2s = decompose_U(U)
 
-    def _transform_state(self, r1, r2, r3, r4, theta1s, theta2s, phi1s, phi2s, theta_vac) -> qt.Qobj:
+        return (r1, r2, r3, r4), (theta1s, theta2s), (psi1s, psi2s), (delta1s, delta2s)
+
+    def _transform_state(self, r1, r2, r3, r4, theta1s, theta2s, psi1s, psi2s, delta1s, delta2s, theta_vac) -> qt.Qobj:
         """
         Transforms the input quantum state to the output quantum state using the parameters from the Bloch-Messiah
         decomposition.
@@ -644,8 +739,10 @@ class TwoModeBlochMessiah:
         :param r2: Squeezing parameter for mode 2
         :param theta1s: Rotation parameters for first rotation
         :param theta2s: Rotation parameters for second rotation
-        :param phi1s: Phase parameters for first rotation
-        :param phi2s: Phase parameters for second rotation
+        :param psi1s: First phase parameters for first relative phase transformation
+        :param psi2s: First phase parameters for second relative phase transformation
+        :param delta1s: Second phase parameters for first relative phase transformation
+        :param delta2s: Second phase parameters for second relative phase transformation
         :param theta_vac: Rotation angle for mixing with vacuum mode in the end
         :return: The output quantum state as a qutip state
         """
@@ -665,28 +762,27 @@ class TwoModeBlochMessiah:
 
         rho = qt.ket2dm(qt.tensor(rho_u, rho_1, rho_2, rho_3))
 
-        U_au_a1 = create_bs_interaction(au, a1, theta1s[0], phi1s[0])
-        U_au_a2 = create_bs_interaction(au, a2, theta1s[1], phi1s[1])
-        U_au_a3 = create_bs_interaction(au, a3, theta1s[2], phi1s[2])
+        U_au_a1 = create_bs_and_phase_interaction(au, a1, theta1s[0], psi1s[0], delta1s[0])
+        U_au_a2 = create_bs_and_phase_interaction(au, a2, theta1s[1], psi1s[1], delta1s[1])
+        U_au_a3 = create_bs_and_phase_interaction(au, a3, theta1s[2], psi1s[2], delta1s[2])
 
-        rho_t = U_au_a1 * U_au_a2 * U_au_a3 * rho * U_au_a3.dag() * U_au_a2.dag() * U_au_a1.dag()
-
+        rho = U_au_a1 * U_au_a2 * U_au_a3 * rho * U_au_a3.dag() * U_au_a2.dag() * U_au_a1.dag()
         S1: qt.Qobj = qt.tensor(qt.squeeze(self._N, -r1), I, I, I)
         S2: qt.Qobj = qt.tensor(I, qt.squeeze(self._N, -r2), I, I)
         S3: qt.Qobj = qt.tensor(I, I, qt.squeeze(self._N, -r3), I)
         S4: qt.Qobj = qt.tensor(I, I, I, qt.squeeze(self._N, -r4))
 
-        rho_t = S4 * S3 * S2 * S1 * rho_t * S1.dag() * S2.dag() * S3.dag() * S4.dag()
+        rho = S4 * S3 * S2 * S1 * rho * S1.dag() * S2.dag() * S3.dag() * S4.dag()
 
-        V_au_a1 = create_bs_interaction(au, a1, theta2s[0], phi2s[0])
-        V_au_a2 = create_bs_interaction(au, a2, theta2s[1], phi2s[1])
-        V_au_a3 = create_bs_interaction(au, a3, theta2s[2], phi2s[2])
-        V_a1_a2 = create_bs_interaction(a1, a2, theta2s[3], phi2s[3])
-        V_a1_a3 = create_bs_interaction(a1, a3, theta2s[4], phi2s[4])
+        V_au_a1 = create_bs_and_phase_interaction(au, a1, theta2s[0], psi2s[0], delta2s[0])
+        V_au_a2 = create_bs_and_phase_interaction(au, a2, theta2s[1], psi2s[1], delta2s[1])
+        V_au_a3 = create_bs_and_phase_interaction(au, a3, theta2s[2], psi2s[2], delta2s[2])
+        V_a1_a2 = create_bs_and_phase_interaction(a1, a2, theta2s[3], psi2s[3], delta2s[3])
+        V_a1_a3 = create_bs_and_phase_interaction(a1, a3, theta2s[4], psi2s[4], delta2s[4])
 
-        rho_t = V_a1_a3 * V_a1_a2 * V_au_a3 * V_au_a2 * V_au_a1 * rho_t * V_au_a1.dag() * V_au_a2.dag() * V_au_a3.dag() * V_a1_a2.dag() * V_a1_a3.dag()
+        rho = V_a1_a3 * V_a1_a2 * V_au_a3 * V_au_a2 * V_au_a1 * rho * V_au_a1.dag() * V_au_a2.dag() * V_au_a3.dag() * V_a1_a2.dag() * V_a1_a3.dag()
 
-        rhov1v2 = rho_t.ptrace([0, 1])
+        rhov1v2 = rho.ptrace([0, 1])
 
         av2 = qt.tensor(I, a, I)
         a4 = qt.tensor(I, I, a)
