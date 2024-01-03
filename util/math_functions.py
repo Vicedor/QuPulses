@@ -254,7 +254,7 @@ def get_filtered_gaussian_as_list(tp: float, tau: float, gamma: float, w0: float
     dispersion_factor = lambda w: (0.5 * gamma + 1j * (w - w0)) / (-0.5 * gamma + 1j * (w - w0))
     v_w = lambda w: dispersion_factor(w) * fourier_gaussian_w(w)
 
-    return _get_inverse_fourier_transform_as_list(v_w, times)
+    return get_inverse_fourier_transform_as_list(v_w, times)
 
 
 def n_filtered_gaussian(tp: float, tau: float, gammas: List[float], w0s: List[float], times: np.ndarray):
@@ -318,15 +318,33 @@ def get_n_filtered_gaussian_as_list(tp: float, tau: float, gammas: List[float], 
 
         return out
 
-    return _get_inverse_fourier_transform_as_list(v_w, times)
+    return get_inverse_fourier_transform_as_list(v_w, times)
 
 
-def _get_inverse_fourier_transform_as_list(f_w: Callable[[float], float], times):
+def get_fourier_transform_as_list(f_t: Callable[[float], float], omegas):
+    """
+    Calculates the fourier transform numerically and returns a list of the function evaluated at the given frequencies
+    :param f_t: The function to be taken the fourier transform of
+    :param omegas: The array of frequencies the function will be evaluated at
+    :return: A list of the same length as the omegas list with the values of the fourier transform at these frequencies
+    """
+    # Calculate f for each timestep
+    nT = len(omegas)
+    f_w = np.zeros(nT, dtype=np.complex_)
+    for k in range(0, nT):
+        f_w[k] = fourier_transform(f_t, omegas[k])
+
+    # Normalize f_t
+    f_w = f_w / np.sqrt(trapz(f_w * np.conjugate(f_w), omegas))
+    return f_w
+
+
+def get_inverse_fourier_transform_as_list(f_w: Callable[[float], float], times):
     """
     Calculates the inverse fourier transform numerically and returns a list of the function evaluated at the given times
     :param f_w: The fourier transformed function to be taken the inverse fourier transform of
     :param times: The array of times the function will be evaluated at
-    :return: A list of the same length as the times list with the values of the inverse fourer transform at these times
+    :return: A list of the same length as the times list with the values of the inverse fourier transform at these times
     """
     # Calculate f for each timestep
     nT = len(times)
@@ -339,12 +357,25 @@ def _get_inverse_fourier_transform_as_list(f_w: Callable[[float], float], times)
     return f_t
 
 
-def inverse_fourier_transform(f: Callable[[float], float], t: float):
+def fourier_transform(f: Callable[[float], float], w: float) -> complex:
+    """
+    Gives the Fourier transform of f(t) to get f(w)
+    :param f: The function f(t) to perform fourier transform on
+    :param w: The frequency at which to get f(w)
+    :return: The Fourier transform of f(w) at given frequency w
+    """
+    f_with_fourier_factor = lambda t, ww: f(t) * np.exp(1j * t * ww) / np.sqrt(2*np.pi)
+    f_real = lambda t, ww: np.real(f_with_fourier_factor(t, ww))
+    f_imag = lambda t, ww: np.imag(f_with_fourier_factor(t, ww))
+    return quad(f_real, -np.inf, np.inf, args=(w,))[0] + 1j * quad(f_imag, -np.inf, np.inf, args=(w,))[0]
+
+
+def inverse_fourier_transform(f: Callable[[float], float], t: float) -> complex:
     """
     Gives the inverse Fourier transform of f(w) to get f(t)
-    :param f: the function to perform inverse fourier transform on f(w)
-    :param t: The time at which to get v(t)
-    :return: The inverse Fourier transformed v(t) at given time t
+    :param f: the function f(w) to perform inverse fourier transform
+    :param t: The time at which to get f(t)
+    :return: The inverse Fourier transformed f(t) at given time t
     """
     f_with_fourier_factor = lambda w, tt: f(w) * np.exp(-1j * w * tt) / np.sqrt(2*np.pi)
     f_real = lambda w, tt: np.real(f_with_fourier_factor(w, tt))  # real part
