@@ -4,7 +4,7 @@ This file contains a component factory, which can create many of the most used c
 import numpy as np
 import qutip as qt
 import SLH.network as nw
-from typing import Union, Callable
+from typing import Union, Callable, List
 
 
 def create_cavity(I: qt.Qobj, a: qt.Qobj, g: Union[float, Callable[[float], float]], w0: float) -> nw.Component:
@@ -23,16 +23,18 @@ def create_cavity(I: qt.Qobj, a: qt.Qobj, g: Union[float, Callable[[float], floa
     return nw.Component(nw.MatrixOperator(I), nw.MatrixOperator(a_t), w0 * a.dag() * a)
 
 
-def create_beam_splitter() -> nw.Component:
+def create_beam_splitter(S: List[List[complex]] = None) -> nw.Component:
     """
     Creates a beam splitter as in SLH paper. In the SLH formalism, the beam splitter matrix is such that the reflected
     input mode corresponds to the same output mode, which is different from the convention must use, see for instance
     eq A2 in the SLH-paper and eq 6.8 in Gerry & Knight, Introductory Quantum Optics
     :return: The beam splitter component
     """
-    return nw.Component(S=nw.MatrixOperator([[-1 / np.sqrt(2), 1 / np.sqrt(2)],
-                                             [1 / np.sqrt(2), 1 / np.sqrt(2)]]),
-                        L=nw.MatrixOperator([[0], [0]]),
+    if S is None:
+        S: List[List[complex]] = [[-1 / np.sqrt(2), 1 / np.sqrt(2)],
+                                  [1 / np.sqrt(2), 1 / np.sqrt(2)]]
+    return nw.Component(S=nw.MatrixOperator(S),
+                        L=nw.MatrixOperator([[0] for _ in range(len(S))]),
                         H=0)
 
 
