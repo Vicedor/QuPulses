@@ -15,18 +15,19 @@ from typing import Callable, List, Any, Tuple, Optional, Union
 
 
 def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
-                    a_op: qt.QobjEvo, b_op: qt.QobjEvo) -> np.ndarray:
+                    a_op: Union[qt.Qobj, qt.QobjEvo], b_op: Union[qt.Qobj, qt.QobjEvo]) -> np.ndarray:
     """
     Calculates the autocorrelation function (eq. 14 in long Kiilerich) as a matrix of t and t'. The a_op and b_op must
     be time-dependent QobjEvo operators. For non-time dependent operators, use qutips own correlation functions
     :param liouvillian: The liouvillian to use for time evolution
     :param psi: The initial state
     :param times: An array of the times to evaluate the autocorrelation function
-    :param a_op: The time-dependent rightmost operator in the autocorrelation function
-    :param b_op: The time-dependent leftmost operator in the autocorrelation function
+    :param a_op: The rightmost operator in the autocorrelation function
+    :param b_op: The leftmost operator in the autocorrelation function
     :return: A matrix of the autocorrelation function evaluated at t and t'
     """
-    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=psi, c_ops=[], e_ops=[], times=times)
+    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=psi, c_ops=[],
+                                                         e_ops=[], times=times, verbose=False)
     rhos: np.ndarray = result.states
     autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
 
@@ -35,8 +36,18 @@ def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, 
 
     for t_idx, rho in enumerate(rhos):
         sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
-        ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
-                                       e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
+        if isinstance(a_op, qt.QobjEvo) and isinstance(b_op, qt.QobjEvo):
+            ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
+                                           e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
+        elif isinstance(a_op, qt.QobjEvo):
+            ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
+                                           e_ops=[b_op], times=times[t_idx:], verbose=False).expect[0]
+        elif isinstance(b_op, qt.QobjEvo):
+            ex = integrate_master_equation(f=liouvillian, psi=a_op * rho, c_ops=[],
+                                           e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
+        else:
+            ex = integrate_master_equation(f=liouvillian, psi=a_op * rho, c_ops=[],
+                                           e_ops=[b_op], times=times[t_idx:], verbose=False).expect[0]
         autocorr_matrix[t_idx, t_idx:] = ex
         autocorr_matrix[t_idx:, t_idx] = ex
         sys.stdout.flush()
