@@ -79,5 +79,34 @@ def create_interferometer_with_lower_system(system: nw.Component) -> nw.Componen
 
 
 def create_squeezing_cavity(I: qt.Qobj, a: qt.Qobj, gamma: float, Delta: float, xi: float) -> nw.Component:
-    return nw.Component(S=nw.MatrixOperator(I), L=nw.MatrixOperator(gamma * a),
+    """
+    Creates a Parametric Amplifier with Hamiltonian H = Delta a^dag * a + i*xi / 2 * (a^dag^2 - a^2) coupled to
+    external degrees of freedom with rate gamma.
+    :param I: The Identity operator on the full Hilbert space
+    :param a: The annihilation operator of the cavity in the full Hilbert space
+    :param gamma: The decay rate of the cavity
+    :param Delta: The detuning of the cavity
+    :param xi: The strength of the non-linear term
+    :return: An SLH component for a Parametric Amplifier
+    """
+    return nw.Component(S=nw.MatrixOperator(I), L=nw.MatrixOperator(np.sqrt(gamma) * a),
                         H=Delta * a.dag() * a + 0.5j * xi * (a.dag() * a.dag() - a * a))
+
+
+def atom_in_cavity(I: qt.Qobj, a: qt.Qobj, c: qt.Qobj, gamma: float, Delta: float,
+                   Omega: float, g: float) -> nw.Component:
+    """
+    Creates an atom in a one-sided cavity with Hamiltonian H = Delta a^dag * a + Omega / 2 * sigma_z
+    + g * (c * a^dag + c^dag * a) coupled to external degrees of freedom with rate gamma.
+    :param I: The Identity operator on the full Hilbert space
+    :param a: The annihilation operator of the cavity in the full Hilbert space
+    :param c: The sigma minus operator for the atom
+    :param gamma: The decay rate of the cavity
+    :param Delta: The detuning of the cavity
+    :param Omega: Atomic transition frequency
+    :param g: Coupling constant between cavity and atom
+    :return: An SLH component for the atom in the cavity
+    """
+    sigma_z: qt.Qobj = c * c.dag() - c.dag() * c
+    return nw.Component(S=nw.MatrixOperator(I), L=nw.MatrixOperator(np.sqrt(gamma) * a),
+                        H=Delta * a.dag() * a + Omega / 2 * sigma_z + g * (c * a.dag() + c.dag() * a))
