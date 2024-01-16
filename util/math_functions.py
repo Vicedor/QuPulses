@@ -6,7 +6,8 @@ import numpy as np
 import qutip as qt
 from scipy.special import erf
 from scipy.integrate import quad, trapz, complex_ode
-from typing import Callable, List
+from scipy.fft import fft, fftshift, ifft, ifftshift
+from typing import Callable, List, Tuple
 
 
 def exponential(g: float) -> Callable[[float], float]:
@@ -78,7 +79,7 @@ def two_mode_integral(tp: float, tau: float) -> Callable[[float], float]:
     return lambda t: (f(t) + g(t)) / 2
 
 
-def gaussian_sine(tp: float, tau: float) -> Callable[[float], float]:
+def gaussian_sine(tp: float, tau: float, omega: float, phi: float = 0) -> Callable[[float], float]:
     """
     A gaussian multiplied with a sine function to make it orthogonal to a regular gaussian
     :param tp: The offset in time of the gaussian and sine
@@ -86,27 +87,24 @@ def gaussian_sine(tp: float, tau: float) -> Callable[[float], float]:
     :return: A gaussian * sine function handle
     """
     g = gaussian(tp, tau)
-    return lambda t: g(t) * np.sin((t - tp)) * np.sqrt(2/(1 - np.exp(-tau**2)))  # last term is for normalization
+    return lambda t: g(t) * np.sin(omega * (t - tp) + phi) * np.sqrt(2/(1 - np.cos(2*phi)*np.exp(-omega**2 * tau**2)))  # last term is for normalization
 
 
-def gaussian_sine_integral(tp: float, tau: float) -> Callable[[float], float]:
+def gaussian_sine_integral(tp: float, tau: float, omega: float, phi: float = 0) -> Callable[[float], float]:
     """
     Returns a function that evaluates the integral of a gaussian times a sine function from 0 to t
     :param tp: The offset in time of the gaussian and sine
     :param tau: The width of the gaussian
     :return: A function that evaluate the integral of gaussian * sine from 0 to t
     """
-    tau_sq = tau ** 2
-
     def temp(t: float):
-        a = erf((t + 1j*tau_sq - tp)/tau)
-        b = erf((t - 1j*tau_sq - tp)/tau)
-        c = 2*np.exp(tau_sq)*erf((t - tp)/tau)
-        d = erf((1j*tau_sq + tp)/tau)
-        e = erf((1j*tau_sq - tp)/tau)
-        f = 2 * erf(tp/tau) * np.exp(tau_sq)
-        g = 4*np.exp(tau_sq) - 4
-        return - (a + b - c + d - e - f) / g
+        a = erf((t + 1j*tau**2*omega - tp)/tau) * np.exp(-1j*phi)
+        b = erf((t - 1j*tau**2*omega - tp)/tau) * np.exp(1j*phi)
+        c = 2*np.exp(omega**2 * tau**2)*erf((t - tp)/tau)
+        d = 2 * np.exp(omega**2 * tau**2)
+        e = 2 * np.cos(2*phi)
+        f = 4 * (np.exp(omega**2 * tau**2) - np.cos(2*phi))
+        return - (a + b - c - d + e) / f
     return temp
 
 
@@ -381,6 +379,45 @@ def inverse_fourier_transform(f: Callable[[float], float], t: float) -> complex:
     f_real = lambda w, tt: np.real(f_with_fourier_factor(w, tt))  # real part
     f_imag = lambda w, tt: np.imag(f_with_fourier_factor(w, tt))  # imaginary part
     return quad(f_real, -np.inf, np.inf, args=(t,))[0] + 1j * quad(f_imag, -np.inf, np.inf, args=(t,))[0]
+
+
+def fast_fourier_transform(xs: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Implements the fast fourier transform using scipy's fft procedure. The fft can be used as a continuous Fourier
+    Transform even though it is discreet, se for instance https://phys.libretexts.org/Bookshelves/Mathematical_Physics_
+    and_Pedagogy/Computational_Physics_(Chong)/11%3A_Discrete_Fourier_Transforms/11.01%3A_Conversion_of_Continuous_
+    Fourier_Transform_to_DFT
+
+    It is important to notice that the output will be given at frequencies given by
+
+    k_n = 2*pi*n / (N * Delta x)
+
+    So to get a good resolution in k-domain, we need a large N and large Delta x. But to get a good resolution in x-
+    domain we need small Delta x. The solution is to let Delta x be small but N very large, by sampling far besides the
+    spectrum you wish to investigate.
+    :param xs: The points at which the function is sampled
+    :param u: The function value at the sample points
+    :return: A tuple of a list of frequencies and then the Fourier transform values at those frequencies (freq, u)
+    """
+    u_fft = fftshift(fft(u, norm='ortho')) * 4  # Why factor of 4???
+    dx = xs[1] - xs[0]
+    N = len(xs)
+    freq = np.array([2*np.pi * n / (N*dx) for n in range(N)]) - np.pi / dx
+    return freq, u_fft
+
+
+def inverse_fast_fourier_transform(ks: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Implements the inverse Fast Fourier transform, using the reverse process of the fast fourier transform procedure
+    :param ks: The array of frequencies the spectrum is defined across
+    :param u: The value of the spectrum at the given frequencies
+    :return: A tuple of a list of positions and then the Inverse Fourier Transform at these positions (xs, u)
+    """
+    u_ifft = ifftshift(ifft(u, norm='ortho')) / 4
+    dk = ks[1] - ks[0]
+    N = len(ks)
+    xs = np.array([2 * np.pi * n / (N * dk) for n in range(N)])
+    return xs, u_ifft
 
 
 """Solve Interaction picture numerically through numerical solution to differential equation"""
