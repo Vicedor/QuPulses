@@ -1,6 +1,9 @@
+import matplotlib.lines
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib import animation
+
 import util.pulse as p
 from typing import List, Dict, Union, Optional, Tuple
 
@@ -136,7 +139,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     plt.subplot(3, 1, 1)
     xs = [times for _ in range(len(u_lists))]
     options = [pulse_option[0] for pulse_option in pulse_options]
-    plot_subplot(xs, u_lists, options, SubPlotOptions(xlabel=None, ylabel='$\mathrm{Modes}$', legendloc='upper right'))
+    plot_subplot(xs, u_lists, options, SubPlotOptions(xlabel=None, ylabel=r'$\mathrm{Modes}$', legendloc='upper right'))
     plt.tick_params(
         axis='x',  # changes apply to the x-axis
         which='both',  # both major and minor ticks are affected
@@ -155,13 +158,13 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
         bottom='on',  # ticks along the bottom edge are off
         top='on',  # ticks along the top edge are off
         labelbottom=False)  # labels along the bottom edge are off
-    plt.yticks((0, 4, 8), ('$0.0$', '$4.0$', '$8.0$'))
-    plt.ylim((-8, 8))
+    #plt.yticks((0, 4, 8), ('$0.0$', '$4.0$', '$8.0$'))
+    #plt.ylim((-8, 8))
 
     plt.subplot(3, 1, 3)
-    xs = [times for i in range(len(contents))]
+    xs = [times for _ in range(len(contents))]
     plot_subplot(xs, contents, content_options,
-                 SubPlotOptions(xlabel='Time (units of $\gamma^{-1}$)', ylabel='$\mathrm{Exctiations}$', legendloc='center right'))
+                 SubPlotOptions(xlabel=r'Time (units of $\gamma^{-1}$)', ylabel=r'$\mathrm{Excitations}$', legendloc='center right'))
 
     #plt.savefig('test.png', bbox_inches='tight')
     plt.show()
@@ -170,14 +173,24 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
 def plot_autocorrelation(autocorr_mat, vs, eigs, times):
     fig, ax = plt.subplots(figsize=(8, 16))
 
-    plt.subplot(2, 1, 1)
+    plt.subplot(2, 2, 1)
     real_autocorr_mat1 = np.real(autocorr_mat)
+    imag_autocorr_mat1 = np.imag(autocorr_mat)
     im = plt.imshow(real_autocorr_mat1)
     plt.colorbar(im)
 
-    plt.subplot(2, 1, 2)
+    plt.subplot(2, 2, 2)
+    im = plt.imshow(imag_autocorr_mat1)
+    plt.colorbar(im)
+
+    plt.subplot(2, 2, 3)
     for i, v in enumerate(vs):
-        plt.plot(times, v, "-", linewidth=4, label=f"$v_{i} (n_{i}={np.real(eigs[i]):.2f})$")
+        plt.plot(times, np.real(v), "-", linewidth=4, label=f"$v_{i} (n_{i}={np.real(eigs[i]):.2f})$")
+    plt.legend(loc='center right', frameon=False)
+
+    plt.subplot(2, 2, 4)
+    for i, v in enumerate(vs):
+        plt.plot(times, np.imag(v), "-", linewidth=4, label=f"$v_{i} (n_{i}={np.real(eigs[i]):.2f})$")
     plt.legend(loc='center right', frameon=False)
 
     plt.show()
@@ -202,4 +215,34 @@ def plot_fidelities(xs, fidelity_aa, fidelity_ab, fidelity_ba, xlabel="", title=
     plt.xlabel(xlabel)
     plt.ylabel("Fidelity")
     plt.legend()
+    plt.show()
+
+
+def animate_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], xlim: Tuple[float, float] = None,
+                 ylim: Tuple[float, float] = None, xlabel: str = None, ylabel: str = None):
+    """
+    Animates a list of n x m arrays. The animation animates over the 1st axis. For each frame a new column is plotted,
+    so in a given frame, the y[:, frame] column will be plotted.
+    :param xs_list: An x-axis for each line
+    :param ys_list: A list of n x m arrays to be animated
+    :param xlim: Limits for the x-axis in the plot
+    :param ylim: Limits for the y-axis in the plot
+    :param xlabel: Label for the x-axis
+    :param ylabel: Label for the y-axis
+    :return:
+    """
+    fig, ax = plt.subplots()
+    lines: List[mpl.lines.Line2D] = []
+    for i, xs in enumerate(xs_list):
+        lines.append(ax.plot(xs, ys_list[i][:, 0])[0])
+    # ax.plot(virtual_cavity_in_medium.times, vecs[0] * np.conjugate(vecs[0]))
+    ax.set(xlim=xlim, ylim=ylim, xlabel=xlabel, ylabel=ylabel)
+
+    def update(frame):
+        # for each frame, update the data stored on each artist.
+        for j, line in enumerate(lines):
+            line.set_ydata(ys_list[j][:, frame])
+        return lines
+
+    ani = animation.FuncAnimation(fig=fig, func=update, frames=ys_list[0].shape[1], interval=30)
     plt.show()
