@@ -126,7 +126,7 @@ def plot_system_contents(times: np.ndarray, pulses: Union[p.Pulse, List[p.Pulse]
     g_lists = []
     for pulse in pulses:
         # Set up u(t) and g(t)
-        g_list = np.zeros(nT, dtype=np.complex_)
+        g_list = np.zeros(nT, dtype=np.complex128)
         u_list = np.zeros(nT)
         for k in range(0, nT):
             g_list[k] = pulse.g(times[k]) ** 2
@@ -219,7 +219,8 @@ def plot_fidelities(xs, fidelity_aa, fidelity_ab, fidelity_ba, xlabel="", title=
 
 
 def animate_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], xlim: Tuple[float, float] = None,
-                 ylim: Tuple[float, float] = None, xlabel: str = None, ylabel: str = None):
+                 ylim: Tuple[float, float] = None, xlabel: str = None, ylabel: str = None, save: bool = False,
+                 filename: str = 'temp.gif'):
     """
     Animates a list of n x m arrays. The animation animates over the 1st axis. For each frame a new column is plotted,
     so in a given frame, the y[:, frame] column will be plotted.
@@ -229,6 +230,8 @@ def animate_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], xlim: Tup
     :param ylim: Limits for the y-axis in the plot
     :param xlabel: Label for the x-axis
     :param ylabel: Label for the y-axis
+    :param save: Whether to save or not
+    :param filename: Name for file to save
     :return:
     """
     fig, ax = plt.subplots()
@@ -245,4 +248,8 @@ def animate_plot(xs_list: List[np.ndarray], ys_list: List[np.ndarray], xlim: Tup
         return lines
 
     ani = animation.FuncAnimation(fig=fig, func=update, frames=ys_list[0].shape[1], interval=30)
+    if save:
+        Writer = animation.writers['pillow']
+        writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+        ani.save(filename=filename, writer=writer)
     plt.show()

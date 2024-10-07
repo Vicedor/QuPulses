@@ -8,6 +8,7 @@ epsilon = 1e-10                     # Kill rate to avoid numerical instability
 # Pulse shapes
 gaussian = "gaussian"
 exponential = "exponential"
+reverse_exponential = "reverse exponential"
 filtered_gaussian = "filtered_gaussian"
 n_filtered_gaussian = "n_filtered_gaussian"
 gaussian_sine = "gaussian sine"

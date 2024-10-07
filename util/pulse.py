@@ -1,8 +1,9 @@
 """
 Implements a quantum pulse with pulse shape u(t) and coupling constant from cavity g(t)
 """
+import matplotlib.pyplot as plt
 import numpy as np
-from scipy.integrate import cumulative_trapezoid
+from scipy.integrate import cumulative_trapezoid, trapezoid
 from util.constants import *
 import util.math_functions as m
 from typing import Tuple, Callable, List
@@ -42,6 +43,9 @@ class Pulse:
         elif self.shape == exponential:
             u = m.exponential(*args)
             g = m.exponential_integral(*args)
+        elif self.shape == reverse_exponential:
+            u = m.reverse_exponential(*args)
+            g = m.reverse_exponential_integral(*args)
         elif self.shape == hermite_gaussian:
             gauss = m.gaussian(args[0], args[1])
             hermite = m.normalized_hermite_polynomial(*args)
@@ -111,7 +115,7 @@ class Pulse:
         return f
 
 
-def _transform_input_pulse_across_cavity(u_target: np.ndarray, u_cavity: np.ndarray, t_list: np.ndarray) -> np.ndarray:
+def __transform_input_pulse_across_cavity(u_target: np.ndarray, u_cavity: np.ndarray, t_list: np.ndarray) -> np.ndarray:
     """
     Does the single transformation across one input cavity (equation A14 in Fan's paper).
     :param u_target: The target pulse shape after the transformation across the cavity (phi_m^(n))
@@ -119,7 +123,7 @@ def _transform_input_pulse_across_cavity(u_target: np.ndarray, u_cavity: np.ndar
     :param t_list: The list of times for which the pulses are defined
     :return: The pulse shape to emit to become the target pulse shape after travelling past the cavity (phi_m^(n-1))
     """
-    mode_overlap = cumulative_trapezoid(u_cavity.conjugate() * u_target, t_list, initial=0)
+    mode_overlap = cumulative_trapezoid(u_cavity.conjugate() * u_target, t_list, initial=0) - trapezoid(u_cavity.conjugate() * u_target, t_list)
     u_cavity_int = cumulative_trapezoid(u_cavity.conjugate() * u_cavity, t_list, initial=0)
     return u_target + u_cavity * mode_overlap / (1 + epsilon - u_cavity_int)
 
@@ -139,7 +143,7 @@ def transform_input_pulses_across_cavities(u_targets: List[np.ndarray], t_list: 
     for i, u in enumerate(u_targets):
         u_transform = u
         for j in range(i):
-            u_transform = _transform_input_pulse_across_cavity(u_transform, output_modes[j], t_list)
+            u_transform = __transform_input_pulse_across_cavity(u_transform, output_modes[j], t_list)
         output_modes.append(u_transform)
     return output_modes
 

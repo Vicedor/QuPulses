@@ -18,10 +18,25 @@ def photon_counting(system: QuantumSystem, plot=False):
     nT = len(times)
 
     total_system: nw.Component = system.create_component()
-    result: qt.solver.Result = qt.photocurrent_mesolve(total_system.H, system.psi0, times, [], total_system.get_Ls(),
-                                                       system.get_expectation_observables(), store_measurement=True,
-                                                       options=qt.Options(store_states=True), normalize=False)
-    measurements = result.measurement[0] * T / nT
+
+    #liouvillian = qt.liouvillian(total_system.H, total_system.get_Ls())
+
+    def liouvillian(t: float, args) -> qt.Qobj:
+        """
+        Gets the liouvillian from the reduced Hamiltonian and collapse operators. This should only be used on the final
+        total component for the whole SLH-network
+        :return: The liouvillian ready to use for a master equation solver
+        """
+        Ls = [row[0](t) if isinstance(row[0], qt.QobjEvo) else row[0] for row in total_system.L.array]
+        if isinstance(total_system.H, qt.QobjEvo):
+            H = total_system.H(t)
+        else:
+            H = total_system.H
+        return qt.liouvillian(H=H, c_ops=[Ls[0]])
+
+    result: qt.solver.Result = qt.mcsolve(liouvillian, system.psi0, times, [total_system.get_Ls()[1]],
+                                          system.get_expectation_observables(), ntraj=100)
+    measurements = result.photocurrent[0] * T / nT
 
     if plot:
         pulse_options, content_options = system.get_plotting_options()

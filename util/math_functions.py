@@ -5,17 +5,27 @@ import math
 import numpy as np
 import qutip as qt
 from scipy.special import erf
-from scipy.integrate import quad, trapz, complex_ode
+from scipy.integrate import quad, trapezoid, complex_ode
+from scipy.interpolate import CubicSpline
 from scipy.fft import fft, fftshift, ifft, ifftshift
 from typing import Callable, List, Tuple
+import warnings
 
 
 def exponential(g: float) -> Callable[[float], float]:
-    return lambda t: np.exp(-g**2*t/2)
+    return lambda t: np.exp(-g**2*t/2) * g
 
 
 def exponential_integral(g: float) -> Callable[[float], float]:
-    return lambda t: (1 - np.exp(-g**2*t))/g**2
+    return lambda t: (1 - np.exp(-g**2*t))
+
+
+def reverse_exponential(g: float, T: float) -> Callable[[float], float]:
+    return lambda t: np.exp(-g**2*(T - t)/2) * g if t < T else 0
+
+
+def reverse_exponential_integral(g: float, T: float) -> Callable[[float], float]:
+    return lambda t: np.exp(g**2*(t - T)) if t < T else 1
 
 
 def gaussian(tp: float, tau: float) -> Callable[[float], float]:
@@ -40,6 +50,7 @@ def gaussian_integral(tp: float, tau: float) -> Callable[[float], float]:
     :param tau: The width of the gaussian
     :return: A function evaluating the integral of gaussian with the given parameters
     """
+    warnings.warn('Warning: This returns the integral of a gaussian, not a Gaussian squared')
     a = np.pi ** 0.25 * np.sqrt(tau) / np.sqrt(2)
     return lambda t: a * (erf((t - tp)/(np.sqrt(2) * tau)) + erf(tp/(np.sqrt(2) * tau)))
 
@@ -211,7 +222,7 @@ def filtered_gaussian(tp: float, tau: float, gamma: float, w0: float, times: np.
     v = get_filtered_gaussian_as_list(tp, tau, gamma, w0, times)
 
     # Return a cubic spline, so it is possible to evaluate at every given timestep
-    v_t = qt.Cubic_Spline(times[0], times[-1], v)
+    v_t = CubicSpline(times, v)
     return v_t
 
 
@@ -228,11 +239,11 @@ def filtered_gaussian_integral(tp, tau, gamma, w0, times):
     v_list = get_filtered_gaussian_as_list(tp, tau, gamma, w0, times)
     v2 = v_list * np.conjugate(v_list)
     nT = len(times)
-    v2_int = np.zeros(nT, dtype=np.complex_)
+    v2_int = np.zeros(nT, dtype=np.complex128)
     for k in range(1, nT):
-        intv2 = trapz(v2[0:k], times[0:k])
+        intv2 = trapezoid(v2[0:k], times[0:k])
         v2_int[k] = intv2
-    v_int = qt.Cubic_Spline(times[0], times[-1], v2_int)
+    v_int = CubicSpline(times, v2_int)
     return v_int
 
 
@@ -268,7 +279,7 @@ def n_filtered_gaussian(tp: float, tau: float, gammas: List[float], w0s: List[fl
     v = get_n_filtered_gaussian_as_list(tp, tau, gammas, w0s, times)
 
     # Return a cubic spline, so it is possible to evaluate at every given timestep
-    v_t = qt.Cubic_Spline(times[0], times[-1], v)
+    v_t = CubicSpline(times, v)
     return v_t
 
 
@@ -285,11 +296,11 @@ def n_filtered_gaussian_integral(tp: float, tau: float, gammas: List[float], w0s
     v_list = get_n_filtered_gaussian_as_list(tp, tau, gammas, w0s, times)
     v2 = v_list * np.conjugate(v_list)
     nT = len(times)
-    v2_int = np.zeros(nT, dtype=np.complex_)
+    v2_int = np.zeros(nT, dtype=np.complex128)
     for k in range(1, nT):
-        intv2 = trapz(v2[0:k], times[0:k])
+        intv2 = trapezoid(v2[0:k], times[0:k])
         v2_int[k] = intv2
-    v_int = qt.Cubic_Spline(times[0], times[-1], v2_int)
+    v_int = CubicSpline(times, v2_int)
     return v_int
 
 
@@ -328,12 +339,12 @@ def get_fourier_transform_as_list(f_t: Callable[[float], float], omegas):
     """
     # Calculate f for each timestep
     nT = len(omegas)
-    f_w = np.zeros(nT, dtype=np.complex_)
+    f_w = np.zeros(nT, dtype=np.complex128)
     for k in range(0, nT):
         f_w[k] = fourier_transform(f_t, omegas[k])
 
     # Normalize f_t
-    f_w = f_w / np.sqrt(trapz(f_w * np.conjugate(f_w), omegas))
+    f_w = f_w / np.sqrt(trapezoid(f_w * np.conjugate(f_w), omegas))
     return f_w
 
 
@@ -346,12 +357,12 @@ def get_inverse_fourier_transform_as_list(f_w: Callable[[float], float], times):
     """
     # Calculate f for each timestep
     nT = len(times)
-    f_t = np.zeros(nT, dtype=np.complex_)
+    f_t = np.zeros(nT, dtype=np.complex128)
     for k in range(0, nT):
         f_t[k] = inverse_fourier_transform(f_w, times[k])
 
     # Normalize f_t
-    f_t = f_t / np.sqrt(trapz(f_t * np.conjugate(f_t), times))
+    f_t = f_t / np.sqrt(trapezoid(f_t * np.conjugate(f_t), times))
     return f_t
 
 
@@ -413,7 +424,7 @@ def inverse_fast_fourier_transform(ks: np.ndarray, u: np.ndarray) -> Tuple[np.nd
     :param u: The value of the spectrum at the given frequencies
     :return: A tuple of a list of positions and then the Inverse Fourier Transform at these positions (xs, u)
     """
-    u_ifft = ifftshift(ifft(u, norm='ortho')) / 4
+    u_ifft = ifft(ifftshift(u), norm='ortho') / 4
     dk = ks[1] - ks[0]
     N = len(ks)
     xs = np.array([2 * np.pi * n / (N * dk) for n in range(N)])
@@ -443,7 +454,7 @@ def vec2matrix(v):
 
 
 def solve_numerical_interaction_picture(F: Callable[[float], np.ndarray], M0: np.ndarray,
-                                        times: np.ndarray) -> List[List[qt.Cubic_Spline]]:
+                                        times: np.ndarray) -> List[List[CubicSpline]]:
     """
     Solves a matrix differential equation for a set of operators, such as achieved from solving an interaction picture.
     The equation is of the form vec(a(t)) = M(t) vec(a(0)), where d/dt M(t) = F(t) * M(t) and M(t) is an n x n matrix.
@@ -465,7 +476,7 @@ def solve_numerical_interaction_picture(F: Callable[[float], np.ndarray], M0: np
     ode = complex_ode(deriv)
     ode.set_initial_value(matrix2vec(M0))
 
-    Ulist = np.zeros((nT, n**2), dtype=np.complex_)
+    Ulist = np.zeros((nT, n**2), dtype=np.complex128)
 
     dt = T / nT
     for i in range(nT):
@@ -475,11 +486,11 @@ def solve_numerical_interaction_picture(F: Callable[[float], np.ndarray], M0: np
     Usplines: List[List] = [[0 for _ in range(n)] for _ in range(n)]
     for i in range(n):
         for j in range(n):
-            Usplines[i][j] = qt.Cubic_Spline(0, T, Ulist[:, i*n + j])
+            Usplines[i][j] = CubicSpline(times, Ulist[:, i*n + j])
     return Usplines
 
 
-def get_time_dependent_modes(U: List[List[qt.Cubic_Spline]], a0: List[qt.Qobj]) -> List[qt.QobjEvo]:
+def get_time_dependent_modes(U: List[List[CubicSpline]], a0: List[qt.Qobj]) -> List[qt.QobjEvo]:
     """
     Converts a matrix U of time-dependent functions and a set of qutip operators a0 to a set of time dependent
     operators a(t), as defined by the matrix product a(t) = U(t) * a0. This function is used in conjunction with the

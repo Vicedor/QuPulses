@@ -6,69 +6,57 @@ import sys
 import qutip as qt
 import numpy as np
 from numpy import ndarray
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 import SLH.network as nw
 from util.quantumsystem import QuantumSystem
 import util.plots as plots
 from util.plots import SubPlotOptions, LineOptions
 from typing import Callable, List, Any, Tuple, Optional, Union
+import scipy
 
 
-def autocorrelation(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
-                    a_op: Union[qt.Qobj, qt.QobjEvo], b_op: Union[qt.Qobj, qt.QobjEvo]) -> np.ndarray:
+def autocorrelation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any], qt.Qobj]], psi: qt.Qobj, c_ops: List[qt.Qobj],
+                    times: np.ndarray, a_op: Union[qt.Qobj, qt.QobjEvo], b_op: Union[qt.Qobj, qt.QobjEvo]) -> np.ndarray:
     """
     Calculates the autocorrelation function (eq. 14 in long Kiilerich) as a matrix of t and t'. The a_op and b_op must
     be time-dependent QobjEvo operators. For non-time dependent operators, use qutips own correlation functions
-    :param liouvillian: The liouvillian to use for time evolution
+    :param f: Something to evaluate a quantum system, either Hamiltonian or Liouvillian
     :param psi: The initial state
+    :param c_ops: Optional collapse operators to apply during integration of master equation
     :param times: An array of the times to evaluate the autocorrelation function
     :param a_op: The rightmost operator in the autocorrelation function
     :param b_op: The leftmost operator in the autocorrelation function
     :return: A matrix of the autocorrelation function evaluated at t and t'
     """
-    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=psi, c_ops=[],
+    result: qt.solver.Result = integrate_master_equation(f=f, psi=psi, c_ops=c_ops,
                                                          e_ops=[], times=times, verbose=False)
     rhos: np.ndarray = result.states
-    autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
+    autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex128)
 
     def b_op_t(t: float, state) -> float:
         return qt.expect(b_op(t), state)
 
-    for t_idx, rho in enumerate(rhos):
+    if isinstance(a_op, qt.QobjEvo) and isinstance(b_op, qt.QobjEvo):
+        psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
+        b_op_choice = b_op_t
+    elif isinstance(a_op, qt.QobjEvo):
+        psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
+        b_op_choice = b_op
+    elif isinstance(b_op, qt.QobjEvo):
+        psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
+        b_op_choice = b_op_t
+    else:
+        psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
+        b_op_choice = b_op
+
+    for t_idx in range(len(rhos)):
         sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
-        if isinstance(a_op, qt.QobjEvo) and isinstance(b_op, qt.QobjEvo):
-            ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
-                                           e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
-        elif isinstance(a_op, qt.QobjEvo):
-            ex = integrate_master_equation(f=liouvillian, psi=a_op(times[t_idx]) * rho, c_ops=[],
-                                           e_ops=[b_op], times=times[t_idx:], verbose=False).expect[0]
-        elif isinstance(b_op, qt.QobjEvo):
-            ex = integrate_master_equation(f=liouvillian, psi=a_op * rho, c_ops=[],
-                                           e_ops=[b_op_t], times=times[t_idx:], verbose=False).expect[0]
-        else:
-            ex = integrate_master_equation(f=liouvillian, psi=a_op * rho, c_ops=[],
-                                           e_ops=[b_op], times=times[t_idx:], verbose=False).expect[0]
+        ex = integrate_master_equation(f=f, psi=psis[t_idx], c_ops=c_ops,
+                                       e_ops=[b_op_choice], times=times[t_idx:], verbose=False).expect[0]
         autocorr_matrix[t_idx, t_idx:] = ex
-        autocorr_matrix[t_idx:, t_idx] = ex
+        autocorr_matrix[t_idx:, t_idx] = np.conjugate(ex)
         sys.stdout.flush()
     print("\n")
-    return autocorr_matrix
-
-
-def autocorrelation_test(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, times: np.ndarray,
-                         a_op: qt.QobjEvo, b_op: qt.Qobj, b_t: Callable[[float], float]):
-    def a_op_t(t: float, state) -> float:
-        return qt.expect(a_op(t), state)
-    result: qt.solver.Result = integrate_master_equation(f=liouvillian, psi=qt.ket2dm(psi)*b_op, c_ops=[],
-                                                         e_ops=[a_op_t], times=times)
-    ex = result.expect[0]
-    autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex_)
-    for t_idx1, t1 in enumerate(times):
-        for t_idx2, t2 in enumerate(times):
-            if t_idx1 <= t_idx2:
-                res = ex[t_idx1] * b_t(t2)
-                autocorr_matrix[t_idx1, t_idx2] = res
-                autocorr_matrix[t_idx2, t_idx1] = res
     return autocorr_matrix
 
 
@@ -81,13 +69,13 @@ def convert_correlation_output(vec: np.ndarray, val: complex, times: np.ndarray)
     :param times: The array of times at which the eigenvector is evaluated
     :return: A normalized eigenvector and eigenvalue
     """
-    vec_int = trapz(vec * np.conjugate(vec), times)
+    vec_int = trapezoid(vec * np.conjugate(vec), times)
     val1 = val * vec_int
     vec1 = vec / np.sqrt(vec_int)
     return vec1, val1
 
 
-def get_autocorrelation_function(liouvillian: Callable[[float, Any], qt.Qobj], psi: qt.Qobj, a_op: qt.QobjEvo,
+def get_autocorrelation_function(system: nw.Component, psi: qt.Qobj, a_op: qt.QobjEvo,
                                  b_op: qt.QobjEvo, times: np.ndarray) -> np.ndarray:
     """
     Calculates the autocorrelation function given a system liouvillian, an initial state and the two system operators in
@@ -101,19 +89,23 @@ def get_autocorrelation_function(liouvillian: Callable[[float, Any], qt.Qobj], p
     """
     print("Starting to calculate autocorrelation function")
     t2 = time.time()
-    autocorr_mat = autocorrelation(liouvillian, psi, times, a_op=a_op, b_op=b_op)
+    if system.is_L_temp_dep():
+        autocorr_mat = autocorrelation(system.liouvillian, psi, c_ops=[], times=times, a_op=a_op, b_op=b_op)
+    else:
+        H = system.H
+        autocorr_mat = autocorrelation(H, psi, c_ops=[system.get_Ls()], times=times, a_op=a_op, b_op=b_op)
     print(f"Finished in {time.time() - t2} seconds!")
     return autocorr_mat
 
 
-def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt.QobjEvo, psi0: qt.Qobj, times: ndarray,
+def get_most_populated_modes(system: nw.Component, L: qt.QobjEvo, psi0: qt.Qobj, times: ndarray,
                              n: Optional[int] = None,
                              trim: bool = False) -> Tuple[ndarray, List[float], List[np.ndarray]]:
     """
     Finds the most populated modes from the autocorrelation function. First the autocorrelation matrix is calculated,
     then it is diagonalized into eigenvalues and eigenvectors. The eigenvectors with the largest eigenvalues
     (corresponding to the most populated modes) are found.
-    :param liouvillian: The system liouvillian for time-evolution of the system
+    :param system: The system to be time-evolved
     :param L: The time-dependent Lindblad operator for the system loss
     :param psi0: The initial state of the system
     :param times: The timesteps to evaluate the autocorrelation function
@@ -122,7 +114,7 @@ def get_most_populated_modes(liouvillian: Callable[[float, Any], qt.Qobj], L: qt
     :param trim: Boolean value for whether to trim modes with less than 0.001 photon content
     :return: The autocorrelation matrix, eigenvalues and eigenvectors for the most populated modes
     """
-    autocorr_mat: np.ndarray = get_autocorrelation_function(liouvillian, psi0, a_op=L, b_op=L.dag(), times=times)
+    autocorr_mat: np.ndarray = get_autocorrelation_function(system, psi0, a_op=L, b_op=L.dag(), times=times)
 
     vals, vecs = convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times, n=n, trim=trim)
 
@@ -137,10 +129,16 @@ def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: ndarray, n: Optio
         n = 10
         trim = True
 
-    vecs = [vec[:, i] for i in range(n)]
-    vals = [val[i] for i in range(n)]
+    vecs = np.array([vec[:, i] for i in range(n)])
+    vals = np.array([val[i] for i in range(n)])
+    vecs = np.flip(vecs[vals.argsort()], 0)
+    vals = np.flip(np.sort(vals))
+
     for i, v in enumerate(vecs):
         vecs[i], vals[i] = convert_correlation_output(v, vals[i], times)
+
+    #for i, vec in enumerate(vecs):
+    #    print(vals[i], scipy.linalg.norm(autocorr_mat @ vec))
 
     if trim:
         vecs2 = []
@@ -160,7 +158,7 @@ def integrate_master_equation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any
                               verbose=True) -> qt.solver.Result:
     """
     Integrates the master equation for the system specifications specified in the setup.py file
-    :param f: A  liouvillian object containing the Hamiltonian and Lindblad operators
+    :param f: Something to evaluate a quantum system, either Hamiltonian or Liouvillian
     :param psi: The initial state as a ket
     :param c_ops: The collapse operators for the system
     :param e_ops: The observables to be tracked during the time-evolution
@@ -192,7 +190,8 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
     :param verbose: Whether to display a progress bar or not. Default: True
     :return: A QuTiP result class, containing the expectation values and states at all times
     """
-    print("Initializing simulation")
+    if verbose:
+        print("Initializing simulation")
     t1 = time.time()
     if system.is_L_temp_dep():
         result = integrate_master_equation(system.liouvillian, psi, c_ops=[], e_ops=e_ops, times=times,
@@ -201,7 +200,8 @@ def calculate_expectations_and_states(system: nw.Component, psi: qt.Qobj,
         H = system.H
         result = integrate_master_equation(H, psi, c_ops=system.get_Ls(), e_ops=e_ops, times=times, options=options,
                                            verbose=verbose)
-    print(f"Finished in {time.time() - t1} seconds!")
+    if verbose:
+        print(f"Finished in {time.time() - t1} seconds!")
     return result
 
 
@@ -328,7 +328,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True, verbose
     return result
 
 
-def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = False)\
+def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = False, plot: bool = True)\
         -> Tuple[List[List[float]], List[List[np.ndarray]]]:
     """
     Calculates the autocorrelation functions on all output channels of an interferometer, to find the pulse modes and
@@ -336,6 +336,7 @@ def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = 
     :param interferometer: The interferometer to find the output from
     :param n: The number of most populated orthogonal output modes to produce
     :param trim: Whether to trim modes with less than 0.001 photons
+    :param plot: Whether to plot the autocorrelation matrix and the modes and eigenvalues
     """
     psi0 = interferometer.psi0
     times = interferometer.times
@@ -345,12 +346,11 @@ def run_autocorrelation(interferometer: QuantumSystem, n: int = 6, trim: bool = 
     vals_in_arms: List[List[float]] = []
     vecs_in_arms: List[List[np.ndarray]] = []
     for L in Ls:
-        autocorr_mat, vals, vecs = get_most_populated_modes(total_system.liouvillian, L, psi0, times, n=n, trim=trim)
+        autocorr_mat, vals, vecs = get_most_populated_modes(total_system, L, psi0, times, n=n, trim=trim)
         vals_in_arms.append(vals)
         vecs_in_arms.append(vecs)
-        #with open(f"output_modes/exact_simple_interferometer_1_photons.pk1", "wb") as file:
-        #    pickle.dump(vecs, file)
-        plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
+        if plot:
+            plots.plot_autocorrelation(autocorr_mat=autocorr_mat, vs=vecs, eigs=vals, times=times)
     return vals_in_arms, vecs_in_arms
 
 
@@ -435,6 +435,45 @@ def run_multiple_quantum_trajectories(quantum_system: QuantumSystem, n: int,
     subplot_options_list = [SubPlotOptions(xlabel="taus", ylabel=f"arm {i}") for i in range(len(all_no_of_quanta))]
     plots.simple_subplots(xs_list, ys_list, content_options_list, subplot_options_list,
                           title='quantum trajectory for each arm')
+
+
+def run_non_hermitian_quantum_system(quantum_system: QuantumSystem, plot: bool = True,
+                                     verbose: bool = True) -> qt.solver.Result:
+    component: nw.Component = quantum_system.create_component()
+    H: Union[qt.Qobj, qt.QobjEvo] = component.H
+    Ls: List[Union[qt.Qobj, qt.QobjEvo]] = component.get_Ls()
+
+    H_eff: Union[qt.Qobj, qt.QobjEvo] = H
+    for L in Ls:
+        H_eff -= 0.5j * L
+
+    pulses = quantum_system.pulses
+    psi0 = quantum_system.psi0
+    times = quantum_system.times
+    options = quantum_system.options
+    pulse_options, content_options = quantum_system.get_plotting_options()
+    e_ops: Union[List[qt.Qobj], Callable] = quantum_system.get_expectation_observables()
+
+    component.H = H_eff
+    component.L = nw.MatrixOperator(0)
+
+    # Test plotting options
+    assert len(pulse_options) == len(pulses)
+    if isinstance(e_ops, Callable):
+        # TODO: Implement check of length of output from function
+        pass
+    else:
+        assert len(e_ops) == len(content_options)
+
+    result: qt.solver.Result = calculate_expectations_and_states(component, psi0, e_ops, times, options, verbose)
+
+    if isinstance(e_ops, Callable):
+        result.expect = convert_time_dependent_e_ops_list(result, times)
+
+    if plot:
+        plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
+
+    return result
 
 
 def run_multiple_tau(interferometer: QuantumSystem, taus: np.ndarray, tps: np.ndarray, Ts: np.ndarray):

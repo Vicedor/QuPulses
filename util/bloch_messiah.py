@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import qutip as qt
 from scipy.integrate import quad
@@ -28,7 +29,7 @@ def create_bs_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, phi: float) -> q
     :param phi: The phase difference for the beam-splitter
     :return: A qutip unitary of the beam-splitter operator
     """
-    return (1j * theta * (a.dag() * b * np.exp(1j * phi) + a * b.dag() * np.exp(-1j * phi))).expm(method='sparse')
+    return (1j * theta * (a.dag() * b * np.exp(1j * phi) + a * b.dag() * np.exp(-1j * phi))).expm()#method=sparse
 
 
 def create_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float) -> qt.Qobj:
@@ -39,7 +40,7 @@ def create_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float) -> qt.Qobj:
     :param theta: Relative phase
     :return: QuTip operator for the phase interaction
     """
-    return (1j * theta * (a.dag() * a - b.dag() * b)).expm(method='sparse')
+    return (1j * theta * (a.dag() * a - b.dag() * b)).expm()#method=sparse
 
 
 def create_bs_and_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, psi: float, delta: float) -> qt.Qobj:
@@ -94,7 +95,7 @@ def decompose_unitary(U: np.ndarray, right: bool = False) -> List[np.ndarray]:
     Us = []
     for i in range(d - 2):
         for j in range(i + 1, d):
-            Ui = np.identity(d, dtype=np.complex_)
+            Ui = np.identity(d, dtype=np.complex128)
             if right:
                 a = U[i, i]
                 b = U[i, j]
@@ -119,7 +120,7 @@ def decompose_unitary(U: np.ndarray, right: bool = False) -> List[np.ndarray]:
                 U = U @ Ui
             else:
                 U = Ui @ U
-    Ui = np.identity(d, dtype=np.complex_)
+    Ui = np.identity(d, dtype=np.complex128)
     Ui[d - 2, d - 2] = U[d - 2, d - 2].conjugate()
     Ui[d - 2, d - 1] = U[d - 1, d - 2].conjugate()
     Ui[d - 1, d - 2] = U[d - 2, d - 1].conjugate()
@@ -296,6 +297,14 @@ class SingleModeBlochMessiah:
         D1 = xi * np.sqrt(1 - ug.conjugate() * ug)
 
         print('target:', A1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
+        print('target, no vacuum:', A1.conjugate() * A1 + B1.conjugate() * B1)
+        print('target2:', 3 * A1 * B1 + C1 * D1)
+        print('target2, no vacuum:', 2 * A1 * B1)
+        print('coherent target:', A1.conjugate() * A1 + A1.conjugate() * B1 + B1.conjugate() * A1 + 2 * B1.conjugate() * B1 + D1.conjugate() * D1)
+        print('coherent target, no vacuum:', A1.conjugate() * A1 + A1.conjugate() * B1 + B1.conjugate() * A1 + B1.conjugate() * B1)
+        print('coherent target2:', A1 * A1 + 3 * A1 * B1 + B1 * B1 + C1 * D1)
+        print('coherent target2, no vacuum:', A1 * A1 + 2 * A1 * B1 + B1 * B1)
+
         norm = np.sqrt(A1.conjugate() * A1 - B1.conjugate() * B1 + C1.conjugate() * C1 - D1.conjugate() * D1)
         theta_vac = np.arccos(norm)
         A1 = A1 / norm
@@ -340,11 +349,13 @@ class SingleModeBlochMessiah:
 
         coefs2 = [A2, C2, B2, D2]
 
-        E = np.array([coefs[:2], coefs2[:2]], dtype=np.complex_)
-        F = np.array([coefs[2:], coefs2[2:]], dtype=np.complex_)
+        E = np.array([coefs[:2], coefs2[:2]], dtype=np.complex128)
+        F = np.array([coefs[2:], coefs2[2:]], dtype=np.complex128)
 
         assert np.isclose(E @ E.conjugate().T - F @ F.conjugate().T, np.identity(2), atol=self._atol, rtol=self._rtol).all()
         assert np.isclose(E @ F.T, F @ E.T, atol=self._atol, rtol=self._rtol).all()
+        assert np.isclose(E.conjugate().T @ E - F.T @ F.conjugate(), np.identity(2), atol=self._atol, rtol=self._rtol).all()
+        assert np.isclose(E.conjugate().T @ F, F.T @ E.conjugate(), atol=self._atol, rtol=self._rtol).all()
         return E, F
 
     def _get_parameters(self, scriptU: np.ndarray, lambda_E: np.ndarray,
@@ -430,6 +441,7 @@ class SingleModeBlochMessiah:
         # Trace over desired output mode
         rhov = (V_a1_a4 * rhov2 * V_a1_a4.dag()).ptrace(0)
         print(qt.expect(a.dag()*a, rhov))
+        print(qt.expect(a * a, rhov))
         return rhov
 
 
@@ -510,6 +522,13 @@ class TwoModeBlochMessiah:
 
         s1 = lambda omega: (h1(omega) - k1(omega) * k1h1) / np.sqrt(1 - k1h1 * k1h1.conjugate())
 
+        print(k1h1)
+        plt.figure()
+        plt.plot(self._xs, h1(self._xs))
+        plt.plot(self._xs, k1(self._xs))
+        plt.plot(self._xs, s1(self._xs))
+        plt.show()
+
         """ Getting all functions for v2 mode decomposition """
 
         uf2 = overlap(self._u, f2, self._xs)
@@ -564,6 +583,16 @@ class TwoModeBlochMessiah:
 
         norm = np.sqrt(A2 * A2.conjugate() - B2 * B2.conjugate() + C2 * C2.conjugate() - D2 * D2.conjugate() + E2 * E2.conjugate() - F2 * F2.conjugate() + G2 * G2.conjugate() - H2 * H2.conjugate())
 
+        print('target2:', A2.conjugate() * A2 + 2 * B2.conjugate() * B2 + D2.conjugate() * D2 + F2.conjugate() * F2 + H2.conjugate() * H2)
+
+        print('av1_dag av1:', A1.conjugate() * A1 + B1.conjugate() * B1)
+        print('av1_dag av2:', A1.conjugate() * A2 + B1.conjugate() * B2)
+        print('av2_dag av2:', A2.conjugate() * A2 + B2.conjugate() * B2)
+
+        print('av1 av1:', A1 * B1 + B1 * A1)
+        print('av1 av2:', A1 * B2 + B1 * A2)
+        print('av2 av2:', A2 * B2 + B2 * A2)
+
         # Get the rotation angle for mixing with the final vacuum mode with the I2 coefficient
         theta_vac = np.arccos(norm)
 
@@ -575,8 +604,6 @@ class TwoModeBlochMessiah:
         F2 = F2 / norm
         G2 = G2 / norm
         H2 = H2 / norm
-
-        print('target2:', A2.conjugate() * A2 + 2 * B2.conjugate() * B2 + D2.conjugate() * D2 + F2.conjugate() * F2 + H2.conjugate() * H2)
 
         return [A1, C1, E1, B1, D1], [A2, C2, E2, G2, B2, D2, F2, H2], theta_vac
 
@@ -694,15 +721,17 @@ class TwoModeBlochMessiah:
         E = np.array([[A1, C1, E1, 0],
                       [A2, C2, E2, G2],
                       [A3, C3, E3, G3],
-                      [A4, C4, E4, G4]], dtype=np.complex_)
+                      [A4, C4, E4, G4]], dtype=np.complex128)
 
         F = np.array([[B1, D1, 0, 0],
                       [B2, D2, F2, H2],
                       [B3, D3, F3, H3],
-                      [B4, D4, F4, H4]], dtype=np.complex_)
+                      [B4, D4, F4, H4]], dtype=np.complex128)
 
         assert np.isclose(E @ E.conjugate().T - F @ F.conjugate().T, np.identity(4), atol=self._atol, rtol=self._rtol).all()
         assert np.isclose(E @ F.T, F @ E.T, atol=self._atol, rtol=self._rtol).all()
+        assert np.isclose(E.conjugate().T @ E - F.T @ F.conjugate(), np.identity(4), atol=self._atol, rtol=self._rtol).all()
+        assert np.isclose(E.conjugate().T @ F, F.T @ E.conjugate(), atol=self._atol, rtol=self._rtol).all()
         return E, F
 
     def _get_parameters(self, U: np.ndarray, lambda_E: np.ndarray,

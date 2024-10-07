@@ -319,13 +319,13 @@ class Component:
 
         # Create the inverse operator
         I: qt.Qobj = qt.qeye(S_xy.dims[0])
-        if I - S_xy == I*0:
-            print("Feedback reduction, division by 0 error")
-            I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
-            I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
-        else:
-            I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy).inv()
-            I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy.dag()).inv()
+        #if (I - S_xy) == I*0:
+        #    print("Feedback reduction, division by 0 error")
+        #    I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
+        #    I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = qt.Qobj(0)
+        #else:
+        I_S_xy_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy).inv()
+        I_S_xy_dag_op: Union[qt.Qobj, qt.QobjEvo] = (I - S_xy.dag()).inv()
 
         # Create the reduced S matrix operator
         S_red: MatrixOperator = S_xbar_ybar + S_xbar_y * I_S_xy_op * S_x_ybar
@@ -411,7 +411,7 @@ def direct_coupling(component1: Component, component2: Component, H_int: Optiona
     # Create the total S operator as diagonal matrix
     S1: MatrixOperator = component1.S
     S2: MatrixOperator = component2.S
-    S_tot_array: List[List[Union[complex, qt.Qobj]]] = [[0 for _ in range(S1.n + S2.n)] for _ in range(S1.m + S2.m)]
+    S_tot_array: List[List[Union[complex, qt.Qobj]]] = [[0 * S1.array[0][0] for _ in range(S1.n + S2.n)] for _ in range(S1.m + S2.m)]
     for i, row in enumerate(S1.array):
         for j, op in enumerate(row):
             S_tot_array[i][j] = op
