@@ -206,7 +206,9 @@ def bloch_messiah(E: np.ndarray, F: np.ndarray, atol=1e-3, rtol=1e-3) -> Tuple[n
     lambda_E_sq, U = np.linalg.eig(E @ E.conjugate().T)
 
     lambda_E = np.diag(np.sqrt(lambda_E_sq))
-    lambda_F = np.sqrt(U.conjugate().T @ F @ F.conjugate().T @ U)
+    lambda_F_sq = U.conjugate().T @ F @ F.conjugate().T @ U
+
+    lambda_F = np.diag(np.sqrt(np.diag(lambda_F_sq)))
 
     Vh_E = np.linalg.inv(lambda_E) @ U.conjugate().T @ E
     W_E = Vh_E.conjugate().T
