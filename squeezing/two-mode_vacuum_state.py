@@ -58,11 +58,11 @@ def main():
 
 
 def numerical_vacuum_density_matrix():
-    with open('../vacuum_state.pkl', 'rb') as file:
-        result = pickle.load(file)
+    with open('vacuum_state.pkl', 'rb') as file:
+        final_state = pickle.load(file)
 
-    psi1 = qt.ptrace(result.final_state, 1)
-    psi2 = qt.ptrace(result.final_state, 2)
+    psi1 = qt.ptrace(final_state, 1)
+    psi2 = qt.ptrace(final_state, 2)
 
     xvec = np.linspace(-5, 5, 200)
     w1 = qt.wigner(psi1, xvec, xvec, g=np.sqrt(2))
@@ -83,7 +83,7 @@ def numerical_vacuum_density_matrix():
     cs = axs.contourf(xvec, xvec, w2, 100, cmap=mpl.cm.RdBu, norm=nrm2)
     plt.colorbar(cs)
     plt.show()
-    return qt.ptrace(result.final_state, sel=[1, 2])
+    return qt.ptrace(final_state, sel=[1, 2])
 
 
 def squeezed_vacuum_density_matrix():
