@@ -39,9 +39,11 @@ G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
 
 def main():
     density_matrix1 = bloch_messiah_density_matrix()
-    density_matrix2 = squeezed_vacuum_density_matrix()
+    density_matrix2 = covariance_matrix_density_matrix()
+    density_matrix3 = vacuum_state_density_matrix()
 
     print(np.all(np.isclose(density_matrix1.full() - density_matrix2, 0)))
+    print(np.all(np.isclose(density_matrix3.full() - density_matrix2, 0)))
 
 
 def overlap(f, g, xs=omegas):
@@ -103,7 +105,7 @@ def bloch_messiah_density_matrix():
     return rhov
 
 
-def squeezed_vacuum_density_matrix():
+def covariance_matrix_density_matrix():
     zeta_u, xi_u, f_u, g_u, v_l = get_parameters()
     v = lambda omega: (alpha * zeta_u * f_u(omega) + np.conjugate(alpha) * xi_u * g_u(omega)) / v_l
 
@@ -117,7 +119,7 @@ def squeezed_vacuum_density_matrix():
     cov11 = 16 * zeta_v**2 * np.real(alpha * overlap(f_v, u))**2 - 16 * zeta_v * alpha * np.conjugate(alpha) / v_l * np.real(alpha * overlap(f_v, u)) + 4 * (alpha * np.conjugate(alpha))**2 / v_l**2
     cov11 = cov11 + 4 * zeta_v**2 + (alpha * np.conjugate(alpha)) / v_l**2 - 4 * zeta_v * np.real(alpha * overlap(f_v, u)) / v_l
 
-    cov12 = zeta_v * np.imag(overlap(u, f_v) * np.conjugate(alpha) - overlap(f_v, u) * alpha) / v_l
+    cov12 = - 2 *zeta_v * np.imag(overlap(f_v, u) * alpha) / v_l
     cov22 = alpha * np.conjugate(alpha) / v_l**2
 
 
@@ -149,6 +151,36 @@ def squeezed_vacuum_density_matrix():
     density_matrix = twq.density_matrix(mu=displace, cov=cov / 2, cutoff=30, normalize=True, hbar=1)
 
     print(density_matrix[0, 0])
+
+    return density_matrix
+
+
+def vacuum_state_density_matrix():
+    zeta_u, xi_u, f_u, g_u, v_l = get_parameters()
+    v = lambda omega: (alpha * zeta_u * f_u(omega) + np.conjugate(alpha) * xi_u * g_u(omega)) / v_l
+
+    # Use this mode to find the vacuum state using the Bloch-Messiah method
+    f_temp = lambda omega: F(omega).conjugate() * v(omega)
+    g_temp = lambda omega: gamma_N_minus(Delta - omega) * v(2 * Delta - omega).conjugate()
+
+    zeta_v = np.sqrt(overlap(f_temp, f_temp))
+    f_v = lambda x: f_temp(x) / zeta_v
+
+    cov11 = 4 * zeta_v**2 + (alpha * np.conjugate(alpha)) / v_l**2 - 4 * zeta_v * np.real(alpha * overlap(f_v, u)) / v_l
+
+    cov12 = - 2 *zeta_v * np.imag(overlap(f_v, u) * alpha) / v_l
+    cov22 = alpha * np.conjugate(alpha) / v_l**2
+
+    cov = np.array([[cov11, cov12],
+                     [cov12, cov22]])
+
+    density_matrix = qt.Qobj(twq.density_matrix(mu=np.array([0, 0]), cov=cov / 2, cutoff=30, normalize=True, hbar=1))
+
+    D = qt.displace(30, (2*zeta_u*np.real(alpha * overlap(v, f_u)) - alpha * np.conjugate(alpha) / v_l))
+
+    density_matrix = D * density_matrix * D.dag()
+
+    print(density_matrix.full()[0, 0])
 
     return density_matrix
 
