@@ -13,6 +13,10 @@ N = 3
 d = 2
 M = 3
 
+N2 = 21
+M2 = 3
+offset = 14
+
 tau = 1
 tp = 4
 w0 = 0
@@ -295,14 +299,14 @@ class Input_Output:
 
 class Interaction_Picture_Input_Output:
     def __init__(self):
-        self.psi0 = qt.tensor(qt.basis(N, 2), qt.basis(d, 0), qt.basis(M, 0))
+        self.psi0 = qt.tensor(qt.basis(N2, 20, offset=offset), qt.basis(d, 0), qt.basis(M2, 0))
 
-        au = qt.destroy(N)
+        au = qt.destroy(N2, offset=offset)
         c = qt.destroy(d)
-        av = qt.destroy(M)
-        Iu = qt.qeye(N)
+        av = qt.destroy(M2)
+        Iu = qt.qeye(N2)
         Id = qt.qeye(d)
-        Iv = qt.qeye(M)
+        Iv = qt.qeye(M2)
         self.au_tot = qt.tensor(au, Id, Iv)
         self.c_tot = qt.tensor(Iu, c, Iv)
         self.av_tot = qt.tensor(Iu, Id, av)
@@ -315,7 +319,7 @@ class Interaction_Picture_Input_Output:
                              [1j * np.sqrt(gamma) * (self.av_tot.dag() * self.c_tot - self.c_tot.dag() * self.av_tot),
                               lambda t, args: self.u_pulse.u(t) * cot(2 * theta(t))]])
         self.L = [np.sqrt(gamma) * self.c_tot - qt.QobjEvo([[self.av_tot,
-                                                             lambda t, args: 2 * csc(theta(t)) * self.u_pulse.u(t)]])]
+                                                             lambda t, args: (np.tan(theta(t)) + cot(theta(t))) * self.u_pulse.u(t)]])]
 
     def get_expectation_observables(self) -> Union[List[qt.Qobj], Callable]:
         return [self.au_tot.dag() * self.au_tot, self.c_tot.dag() * self.c_tot, self.av_tot.dag() * self.av_tot]
