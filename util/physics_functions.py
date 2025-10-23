@@ -5,7 +5,6 @@ import time
 import sys
 import qutip as qt
 import numpy as np
-from numpy import ndarray
 from scipy.integrate import trapezoid
 import SLH.network as nw
 from util.quantumsystem import QuantumSystem
@@ -28,36 +27,62 @@ def autocorrelation(f: Union[qt.Qobj, qt.QobjEvo, Callable[[float, any], qt.Qobj
     :param b_op: The leftmost operator in the autocorrelation function
     :return: A matrix of the autocorrelation function evaluated at t and t'
     """
-    result: qt.solver.Result = integrate_master_equation(f=f, psi=psi, c_ops=c_ops,
-                                                         e_ops=[], times=times, verbose=False)
-    rhos: np.ndarray = result.states
-    autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex128)
+    if type(f) is qt.Qobj:
+        L = qt.liouvillian(H=f, c_ops=c_ops)
+        vec_rho = qt.operator_to_vector(qt.ket2dm(psi))
+        eig_vals, right_vecs_qobj = L.eigenstates()
+        right_vecs = np.zeros((eig_vals.shape[0], eig_vals.shape[0]), dtype=np.complex128)
+        for i in range(eig_vals.shape[0]):
+            right_vecs[i, :] = right_vecs_qobj[i].full().T[0]
 
-    def b_op_t(t: float, state) -> float:
-        return qt.expect(b_op(t), state)
+        Right = qt.Qobj(right_vecs, dims=L.dims)
+        Left = Right.trans().inv()
 
-    if isinstance(a_op, qt.QobjEvo) and isinstance(b_op, qt.QobjEvo):
-        psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
-        b_op_choice = b_op_t
-    elif isinstance(a_op, qt.QobjEvo):
-        psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
-        b_op_choice = b_op
-    elif isinstance(b_op, qt.QobjEvo):
-        psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
-        b_op_choice = b_op_t
+        a_op_super = qt.spre(a_op)
+        b_op_super = qt.spre(b_op)
+
+        identity_vector = qt.operator_to_vector(qt.qeye(dimensions=f.shape[0]))
+
+        T = (identity_vector.trans() * b_op_super * Right.trans()).full()
+        S = (Left * vec_rho).full()
+        B = (Left * a_op_super * Right.trans()).full()
+        C = np.exp(np.outer(times, eig_vals))
+        D = np.exp(-np.outer(times, eig_vals))
+
+        out = np.einsum('xj,bj,ai,aj,ji,ix->ab', T, C, C, D, B, S)
+        return out
+
     else:
-        psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
-        b_op_choice = b_op
+        result: qt.solver.Result = integrate_master_equation(f=f, psi=psi, c_ops=c_ops, e_ops=[], times=times,
+                                                             verbose=False)
+        rhos: np.ndarray = result.states
+        autocorr_matrix = np.zeros((len(times), len(times)), dtype=np.complex128)
 
-    for t_idx in range(len(rhos)):
-        sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
-        ex = integrate_master_equation(f=f, psi=psis[t_idx], c_ops=c_ops,
-                                       e_ops=[b_op_choice], times=times[t_idx:], verbose=False).expect[0]
-        autocorr_matrix[t_idx, t_idx:] = ex
-        autocorr_matrix[t_idx:, t_idx] = np.conjugate(ex)
-        sys.stdout.flush()
-    print("\n")
-    return autocorr_matrix
+        def b_op_t(t: float, state) -> float:
+            return qt.expect(b_op(t), state)
+
+        if isinstance(a_op, qt.QobjEvo) and isinstance(b_op, qt.QobjEvo):
+            psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
+            b_op_choice = b_op_t
+        elif isinstance(a_op, qt.QobjEvo):
+            psis: List[qt.Qobj] = [a_op(times[t_idx]) * rho for t_idx, rho in enumerate(rhos)]
+            b_op_choice = b_op
+        elif isinstance(b_op, qt.QobjEvo):
+            psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
+            b_op_choice = b_op_t
+        else:
+            psis: List[qt.Qobj] = [a_op * rho for t_idx, rho in enumerate(rhos)]
+            b_op_choice = b_op
+
+        for t_idx in range(len(rhos)):
+            sys.stdout.write("\r" + "Iteration " + str(t_idx) + " out of " + str(len(times)))
+            ex = integrate_master_equation(f=f, psi=psis[t_idx], c_ops=c_ops,
+                                           e_ops=[b_op_choice], times=times[t_idx:], verbose=False).expect[0]
+            autocorr_matrix[t_idx, t_idx:] = ex
+            autocorr_matrix[t_idx:, t_idx] = np.conjugate(ex)
+            sys.stdout.flush()
+        print("\n")
+        return autocorr_matrix
 
 
 def convert_correlation_output(vec: np.ndarray, val: complex, times: np.ndarray) -> Tuple[np.ndarray, complex]:
@@ -98,9 +123,9 @@ def get_autocorrelation_function(system: nw.Component, psi: qt.Qobj, a_op: qt.Qo
     return autocorr_mat
 
 
-def get_most_populated_modes(system: nw.Component, L: qt.QobjEvo, psi0: qt.Qobj, times: ndarray,
+def get_most_populated_modes(system: nw.Component, L: qt.QobjEvo, psi0: qt.Qobj, times: np.ndarray,
                              n: Optional[int] = None,
-                             trim: bool = False) -> Tuple[ndarray, List[float], List[np.ndarray]]:
+                             trim: bool = False) -> Tuple[np.ndarray, List[float], List[np.ndarray]]:
     """
     Finds the most populated modes from the autocorrelation function. First the autocorrelation matrix is calculated,
     then it is diagonalized into eigenvalues and eigenvectors. The eigenvectors with the largest eigenvalues
@@ -121,7 +146,7 @@ def get_most_populated_modes(system: nw.Component, L: qt.QobjEvo, psi0: qt.Qobj,
     return autocorr_mat, vals, vecs
 
 
-def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: ndarray, n: Optional[int] = None,
+def convert_autocorr_mat_to_vals_and_vecs(autocorr_mat, times: np.ndarray, n: Optional[int] = None,
                                           trim: bool = False) -> Tuple[List[float], List[np.ndarray]]:
     val, vec = np.linalg.eig(autocorr_mat)
 
@@ -320,7 +345,7 @@ def run_quantum_system(quantum_system: QuantumSystem, plot: bool = True, verbose
     result: qt.solver.Result = calculate_expectations_and_states(total_system, psi0, e_ops, times, options, verbose)
 
     if isinstance(e_ops, Callable):
-        result.expect = convert_time_dependent_e_ops_list(result, times)
+        result._expect = convert_time_dependent_e_ops_list(result, times)
 
     if plot:
         plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
@@ -468,7 +493,7 @@ def run_non_hermitian_quantum_system(quantum_system: QuantumSystem, plot: bool =
     result: qt.solver.Result = calculate_expectations_and_states(component, psi0, e_ops, times, options, verbose)
 
     if isinstance(e_ops, Callable):
-        result.expect = convert_time_dependent_e_ops_list(result, times)
+        result._expect = convert_time_dependent_e_ops_list(result, times)
 
     if plot:
         plots.plot_system_contents(times, pulses, pulse_options, result.expect, content_options)
@@ -594,10 +619,10 @@ def get_odd_schrodinger_cat_state(N: int, alpha: complex) -> qt.Qobj:
 
 def convert_time_dependent_e_ops_list(result: qt.solver.Result, times: np.ndarray) -> List[List]:
     nT = len(times)
-    expect = [[0 for _ in range(nT)] for _ in range(len(result.expect[0]))]
+    expect = [[0 for _ in range(nT)] for _ in range(len(result.expect[0][0]))]
 
     for i, t in enumerate(times):
-        for j in range(len(result.expect[0])):
-            expect[j][i] = result.expect[i][j]
+        for j in range(len(result.expect[0][0])):
+            expect[j][i] = result.expect[0][i][j]
 
     return expect
