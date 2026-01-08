@@ -291,7 +291,7 @@ def squeezed_fock_state():
         return audag
 
     # Initialize the squeezing system with the system parameters
-    ss = SqueezingSystem(f, [M, M], u, fu, gu, zeta_u, xi_u, omegas)
+    ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
 
     # Compute the output modes (two modes when the input is in a fock state)
     v1, v2 = ss.get_output_modes()
