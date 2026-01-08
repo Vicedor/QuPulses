@@ -339,7 +339,7 @@ def squeezed_fock_state():
     plt.show()
 
 
-def overlap(f: Callable[[float], complex], g: Callable[[float], complex], xs):
+def overlap(f: Callable[[float], complex], g: Callable[[float], complex], xs: np.ndarray):
     """
     Compute the overlap integral <f|g> over an interval.
 
@@ -553,7 +553,13 @@ class SqueezingSystem:
         """
         return np.isclose(self.alpha_sq ** 2, self.beta * np.conjugate(self.beta))
 
-    def get_squeezed_vacuum_state(self, fv, gv, zeta_v, xi_v) -> qt.Qobj:
+    def get_squeezed_vacuum_state(
+            self,
+            fv: Callable[[float], complex] | List[Callable[[float], complex]],
+            gv: Callable[[float], complex] | List[Callable[[float], complex]],
+            zeta_v: float,
+            xi_v: float
+    ) -> qt.Qobj:
         """
         Construct the squeezed vacuum state in the v mode(s) using the multidimensional Hermite polynomials.
 
@@ -591,7 +597,13 @@ class SqueezingSystem:
             density_matrix = convert_density_matrix(density_matrix_array)
         return density_matrix
 
-    def get_E_and_F(self, fv, gv, zeta_v, xi_v) -> Tuple[np.ndarray, np.ndarray]:
+    def get_E_and_F(
+            self,
+            fv: Callable[[float], complex] | List[Callable[[float], complex]],
+            gv: Callable[[float], complex] | List[Callable[[float], complex]],
+            zeta_v: float,
+            xi_v: float
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute the operator transformation E and F matrices that capture the mode transformation as in eq. 22 of [1].
         These matrices are used for calculating the covariance matrix of the squeezed vacuum state. The computation of
@@ -650,10 +662,7 @@ class SqueezingSystem:
         return E, F
 
 
-def get_covariance_matrix(
-        E: np.ndarray,
-        F: np.ndarray
-) -> np.ndarray:
+def get_covariance_matrix(E: np.ndarray, F: np.ndarray) -> np.ndarray:
     """
     Build the covariance matrix for the (single‑ or two‑mode) squeezed vacuum state.
 
@@ -687,7 +696,7 @@ def get_covariance_matrix(
     return Identity + 2 * cov_2
 
 
-def convert_density_matrix(density_matrix):
+def convert_density_matrix(density_matrix: np.ndarray):
     """
     Converts a density matrix that is stored as a 4‑D array (density_matrix[n1, m1, n2, m2]) into a 2‑D matrix
     density_matrix[i, j] where
