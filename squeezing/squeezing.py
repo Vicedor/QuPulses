@@ -375,9 +375,10 @@ class SqueezingSystem:
     f : callable
         Function that maps a pair of annihilation/creation operators to a state creation operator that creates the
         input quantum state under the action upon the vacuum state.
-    dims : int or list[int]
-        Dimension(s) of the output Hilbert space(s). A single integer is necessary when the output quantum state will
-        occupy a single mode; a list of two integers for the case of a two mode output quantum state.
+    dim : int
+        Dimension of the output Hilbert space(s). For a two mode output Hilbert space the same dimension will be used
+        for both spaces. This is due to the limited functionality of The Walrus package used to compute the multi-
+        dimensional Hermite polynomials
     u : callable
         The input mode of the input quantum state in frequency.
     fu, gu : callable
@@ -390,7 +391,7 @@ class SqueezingSystem:
     def __init__(
             self,
             f: Callable[[qt.Qobj, qt.Qobj], qt.Qobj],
-            dims: int | List[int],
+            dim: int,
             u: Callable[[float | np.ndarray], complex | np.ndarray],
             fu: Callable[[float | np.ndarray], complex | np.ndarray],
             gu: Callable[[float | np.ndarray], complex | np.ndarray],
@@ -401,11 +402,7 @@ class SqueezingSystem:
         self.u = u
         self.freq = freq
         self.fu, self.gu, self.zeta_u, self.xi_u = fu, gu, zeta_u, xi_u
-        if isinstance(dims, int):
-            dims = [dims]
-        if len(dims) not in [1, 2]:
-            raise Exception(f'dims must be length 1 or 2.')
-        self.dims = dims
+        self.dim = dim
         self.f = f
 
         # Precompute the values |alpha|^2 = <a^dag a> and beta = <a * a>
@@ -414,17 +411,13 @@ class SqueezingSystem:
         # Determine whether the system satisfies the single‑mode condition |alpha|^2 = |beta| (Eq. 9 in ref. [1]).
         # This influences which output‑mode formulas are used later.
         self.is_single_mode = self.__check_output_single_mode()
-        if not self.is_single_mode:
-            if len(self.dims) != 2:
-                raise Exception(f'dims must be length 2 when input state does not obey single mode condition (eq. 9)')
 
     def __get_expectation_values(self):
         """
         Compute <a^dag a> and <a*a> for the input state.
         """
-        N = self.dims[0]
-        vac = qt.basis(N, 0)
-        a = qt.destroy(N)
+        vac = qt.basis(self.dim, 0)
+        a = qt.destroy(self.dim)
         psi = self.f(a, a.dag()) @ vac
         adaga = qt.expect(a.dag() @ a, psi)
         aa = qt.expect(a @ a, psi)
@@ -535,8 +528,7 @@ class SqueezingSystem:
         if self.is_single_mode:
             fu_v = overlap(self.fu, v, self.freq)
             v_gu = overlap(v, self.gu, self.freq)
-            N = self.dims[0]
-            bv: qt.Qobj = qt.destroy(N)
+            bv: qt.Qobj = qt.destroy(self.dim)
             # Eq. 16 of [1] without the h mode as it is irrelevant for the transformation
             au = self.zeta_u * fu_v * bv - self.xi_u * v_gu * bv.dag()
 
@@ -547,9 +539,8 @@ class SqueezingSystem:
             v1_gu = overlap(v1, self.gu, self.freq)
             fu_v2 = overlap(self.fu, v2, self.freq)
             v2_gu = overlap(v2, self.gu, self.freq)
-            N1, N2 = self.dims
-            bv1 = qt.tensor(qt.destroy(N1), qt.qeye(N2))
-            bv2 = qt.tensor(qt.qeye(N1), qt.destroy(N2))
+            bv1 = qt.tensor(qt.destroy(self.dim), qt.qeye(self.dim))
+            bv2 = qt.tensor(qt.qeye(self.dim), qt.destroy(self.dim))
             # Eq. 21 of [1]
             au = (self.zeta_u * fu_v1 * bv1 - self.xi_u * v1_gu * bv1.dag()
                   + self.zeta_u * fu_v2 * bv2 - self.xi_u * v2_gu * bv2.dag())
@@ -586,18 +577,18 @@ class SqueezingSystem:
 
         # Single mode case builds a 2x2 covariance matrix and uses it to compute the multidimensional Hermite
         # polynomials implemented in The Walrus to find the squeezed vacuum state in fock space as in eq. 24 of ref. [1]
-        if len(self.dims) == 1:
+        if self.is_single_mode:
             density_matrix = qt.Qobj(twq.density_matrix(mu=np.array([0, 0]), cov=cov / 2,
-                                                        cutoff=self.dims[0], normalize=True, hbar=1))
+                                                        cutoff=self.dim, normalize=True, hbar=1))
 
         # Two mode case builds a 4x4 covariance matrix and uses it to compute the multidimensional Hermite polynomials
         # implemented in The Walrus to find the squeezed vacuum state in fock space as in eq. 24 of ref. [1]
         else:
             density_matrix_array = twq.density_matrix(mu=np.array([0, 0, 0, 0]), cov=cov / 2,
-                                                      cutoff=self.dims[0], hbar=1)
+                                                      cutoff=self.dim, hbar=1)
 
             # Convert the density matrix from The Walrus Hilbert space dimension formalism to QuTiP's formalism
-            density_matrix = convert_density_matrix(density_matrix_array, self.dims)
+            density_matrix = convert_density_matrix(density_matrix_array)
         return density_matrix
 
     def get_E_and_F(self, fv, gv, zeta_v, xi_v) -> Tuple[np.ndarray, np.ndarray]:
@@ -696,7 +687,7 @@ def get_covariance_matrix(
     return Identity + 2 * cov_2
 
 
-def convert_density_matrix(density_matrix, dims):
+def convert_density_matrix(density_matrix):
     """
     Converts a density matrix that is stored as a 4‑D array (density_matrix[n1, m1, n2, m2]) into a 2‑D matrix
     density_matrix[i, j] where
@@ -711,8 +702,6 @@ def convert_density_matrix(density_matrix, dims):
     ----------
     density_matrix : np.ndarray
         Shape (N1, N1, N2, N2) in The Walrus convention.
-    dims : tuple[int, int]
-        (N1, N2) – dimensions of the two subsystems.
 
     Returns
     -------
@@ -720,10 +709,10 @@ def convert_density_matrix(density_matrix, dims):
         A Qobj whose underlying data is the reshaped density matrix in QuTiPs convention.
     """
 
-    N1, N2 = dims
+    N = density_matrix.shape[0]
     dm_transposed = density_matrix.transpose(0, 2, 1, 3)
-    new_density_matrix = dm_transposed.reshape(N1 * N2, N1 * N2)
-    return qt.Qobj(new_density_matrix, dims=[[N1, N2], [N1, N2]])
+    new_density_matrix = dm_transposed.reshape(N * N, N * N)
+    return qt.Qobj(new_density_matrix, dims=[[N, N], [N, N]])
 
 
 if __name__ == '__main__':
