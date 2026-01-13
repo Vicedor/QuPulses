@@ -8,6 +8,14 @@ import SLH.network as nw
 from typing import Union, Callable, List
 
 
+def coherent_drive(I: qt.Qobj, alpha: Union[float, Callable[[float], float]]):
+    if isinstance(alpha, float) or isinstance(alpha, int):
+        alpha_t: qt.Qobj = alpha * I
+    else:
+        alpha_t: qt.QobjEvo = qt.QobjEvo([[I, lambda t, args: np.conjugate(alpha(t))]])
+    return nw.Component(nw.MatrixOperator(I), nw.MatrixOperator(alpha_t), 0 * I)
+
+
 def create_cavity(I: qt.Qobj, a: qt.Qobj, g: Union[float, Callable[[float], float]], w0: float) -> nw.Component:
     """
     Creates a cavity-component with the given coupling factor, energy spacing and ladder operator
@@ -222,8 +230,8 @@ def two_virtual_cavities_in_irregular_cavity(I: qt.Qobj, a_list: List[qt.Qobj], 
         g1_i = g1s[i]
         g2_i = g2s[i]
         gamma_i = gammas[i]
-        c1_t: qt.QobjEvo = qt.QobjEvo([[c1, lambda t, args, g1_n=g1_i: np.conjugate(g1_n(t))]])
-        c2_t: qt.QobjEvo = qt.QobjEvo([[c2, lambda t, args, g2_n=g2_i: np.conjugate(g2_n(t))]])
+        c1_t: qt.QobjEvo = qt.QobjEvo([[c1, lambda t, g1_n=g1_i: np.conjugate(g1_n(t))]])
+        c2_t: qt.QobjEvo = qt.QobjEvo([[c2, lambda t, g2_n=g2_i: np.conjugate(g2_n(t))]])
         H += Delta_i * a_i.dag() * a_i + 1j * (a_i.dag() * c1_t - c1_t.dag() * a_i + a_i.dag() * c2_t - c2_t.dag() * a_i)
         L += np.sqrt(gamma_i) * a_i
 
