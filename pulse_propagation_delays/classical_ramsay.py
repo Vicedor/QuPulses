@@ -23,29 +23,36 @@ epsilon = 1e-10                     # Kill rate to avoid numerical instability
 # Pulse shapes
 gauss = "gaussian"
 
-N = 10
+N = 4
 d = 2
 
 n = N - 1
 alpha = np.sqrt(n)
 gamma = 1
-if N == 10:
-    offset = 5
+
+if N == 4:
+    t_delay = 1.4
+    tp = 0.8
+    T2 = 9
+    T = 11
+    Delta_max = 15
+
+elif N == 10:
     t_delay = 0.5
     tp = 0.3
     T2 = 6
+    T = 8
     Delta_max = 25
 
 elif N == 31:
-    offset = 25
     t_delay = 0.2
     tp = 0.15
     T2 = 4
+    T = 8
     Delta_max = 50
 
 tau = np.pi ** (3/2) / (8 * gamma * n)
 nT = 2000
-T = 8
 cut = int(nT * T2 / T)
 times = np.linspace(0, T, nT)
 
@@ -58,49 +65,18 @@ def main():
         with open(file, 'rb') as f:
             dic = pickle.load(f)
             populations = dic['populations']
-            intensity1_early = dic['intensity1_early']
-            intensity1_late = dic['intensity1_late']
-            intensity2_early = dic['intensity2_early']
-            intensity2_late = dic['intensity2_late']
     else:
         populations = np.zeros(shape=(len(Deltas), len(times)))
-        intensity1_early = np.zeros(Deltas.shape)
-        intensity1_late = np.zeros(Deltas.shape)
-        intensity2_early = np.zeros(Deltas.shape)
-        intensity2_late = np.zeros(Deltas.shape)
         for i, D in enumerate(Deltas):
             sys.stdout.write("\r" + "Iteration " + str(i) + " out of " + str(len(Deltas)))
             result: qt.solver.Result = interaction_picture_solution(delta=D)
             populations[i, :] = result.expect[0]
-            intensity1_early[i] = trapezoid(result.expect[1][:cut], times[:cut])
-            intensity1_late[i] = trapezoid(result.expect[1][cut:], times[cut:])
-            intensity2_early[i] = trapezoid(result.expect[2][:cut], times[:cut])
-            intensity2_late[i] = trapezoid(result.expect[2][cut:], times[cut:])
             sys.stdout.flush()
         with open(file, 'wb') as f:
             pickle.dump({'n': n, 'times': times, 'gamma': gamma, 't_delay': t_delay, 'tp': tp, 'tau': tau,
-                         'T2': T2, 'Deltas': Deltas, 'populations': populations, 'intensity1_early': intensity1_early,
-                         'intensity1_late': intensity1_late, 'cut': cut, 'intensity2_early': intensity2_early,
-                         'intensity2_late': intensity2_late}, f)
-
-    for i, D in enumerate(Deltas):
-        if not intensity1_late[i] < 30:
-            sys.stdout.write("\r" + "Iteration " + str(i) + " out of " + str(len(Deltas)))
-            result: qt.solver.Result = interaction_picture_solution(delta=D)
-            populations[i, :] = result.expect[0]
-            intensity1_early[i] = trapezoid(result.expect[1][:cut], times[:cut])
-            intensity1_late[i] = trapezoid(result.expect[1][cut:], times[cut:])
-            intensity2_early[i] = trapezoid(result.expect[2][:cut], times[:cut])
-            intensity2_late[i] = trapezoid(result.expect[2][cut:], times[cut:])
-            sys.stdout.flush()
-    with open(file, 'wb') as f:
-        pickle.dump({'n': n, 'times': times, 'gamma': gamma, 't_delay': t_delay, 'tp': tp, 'tau': tau,
-                     'T2': T2, 'Deltas': Deltas, 'populations': populations, 'intensity1_early': intensity1_early,
-                     'intensity1_late': intensity1_late, 'cut': cut, 'intensity2_early': intensity2_early,
-                     'intensity2_late': intensity2_late}, f)
+                         'T2': T2, 'Deltas': Deltas, 'populations': populations, 'cut': cut}, f)
 
     extended_deltas = np.concatenate([np.flip(-Deltas), Deltas])
-
     plt.figure(figsize=(5.2, 4))
     t_max2_ind = round((t_delay + tp + 2 * tau) / T * nT)
     plt.plot(extended_deltas, np.concatenate([np.flip(populations[:, t_max2_ind]), populations[:, t_max2_ind]]), '-')
@@ -110,16 +86,6 @@ def main():
     plt.ylabel(r'$\rho_{22}(t_p + \tau + 2t_w)$')
     plt.tight_layout()
     plt.savefig(f'classical_atomic_excitation_{n}_photons.pdf', format='pdf', dpi=300)
-    plt.show()
-
-    plt.figure(figsize=(5.2, 4))
-    plt.plot(extended_deltas, np.concatenate([np.flip(intensity1_late + offset), intensity1_late + offset]))
-    plt.title(rf'$|n={n}\rangle$ incoming photons')
-    plt.ylim()
-    plt.xlabel(r'Detuning $\Delta$')
-    plt.ylabel(r'Intensity $\langle \hat{L}_1^\dagger \hat{L}_1 \rangle$')
-    plt.tight_layout()
-    plt.savefig(f'classical_intensity_{n}_photons.pdf', format='pdf', dpi=300)
     plt.show()
 
 
@@ -162,9 +128,6 @@ def gaussian_squared_integral(tp: float, tau: float) -> Callable[[float], float]
 def interaction_picture_solution(delta: float = 0) -> qt.solver.Result:
     w1_pulse = Pulse(gauss, in_going=True, args=[tp + t_delay, tau])
     w2_pulse = Pulse(gauss, in_going=True, args=[tp, tau])
-
-    f1 = gaussian_squared_integral(tp + t_delay, tau)
-    f2 = gaussian_squared_integral(tp, tau)
 
     sigma_minus: qt.Qobj = qt.destroy(d)
     sigma_plus: qt.Qobj = sigma_minus.dag()

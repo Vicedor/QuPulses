@@ -23,17 +23,27 @@ epsilon = 1e-10                     # Kill rate to avoid numerical instability
 # Pulse shapes
 gauss = "gaussian"
 
-N = 10
+N = 4
 M = 2
 d = 2
 
 n = N - 1
 gamma = 1
-if N == 10:
+
+if N == 4:
+    offset = 0
+    t_delay = 1.4
+    tp = 0.8
+    T2 = 9
+    T = 12
+    Delta_max = 15
+
+elif N == 10:
     offset = 5
     t_delay = 0.5
     tp = 0.3
     T2 = 6
+    T = 8
     Delta_max = 25
 
 elif N == 31:
@@ -41,11 +51,11 @@ elif N == 31:
     t_delay = 0.2
     tp = 0.15
     T2 = 4
+    T = 8
     Delta_max = 50
 
 tau = np.pi ** (3/2) / (8 * gamma * n)
 nT = 2000
-T = 8
 cut = int(nT * T2 / T)
 times = np.linspace(0, T, nT)
 
@@ -93,10 +103,6 @@ def main():
         with open(file_classic, 'rb') as f:
             dic_c = pickle.load(f)
             populations_c = dic_c['populations']
-            intensity1_early_c = dic_c['intensity1_early']
-            intensity1_late_c = dic_c['intensity1_late']
-            intensity2_early_c = dic_c['intensity2_early']
-            intensity2_late_c = dic_c['intensity2_late']
         plt.plot(extended_deltas, np.concatenate([np.flip(populations_c[:, t_max2_ind]), populations_c[:, t_max2_ind]]), '--', label='Classical')
     plt.title(rf'$|n={n}\rangle$ incoming photons')
     plt.ylim([-0.01, 1.01])
