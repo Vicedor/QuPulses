@@ -9,13 +9,15 @@ import matplotlib.pyplot as plt
 
 epsilon = 1e-10  # Kill rate to avoid numerical instability
 
-N = 3
+N = 2
 d = 2
-M = 3
+M = 2
+n = 1
 
 N2 = 21
 M2 = 3
 offset = 14
+n2 = 20
 
 tau = 1
 tp = 4
@@ -35,9 +37,10 @@ def main():
                                                          times=times)
 
     plt.figure()
-    plt.plot(times, result.expect[0])
-    plt.plot(times, result.expect[1])
-    plt.plot(times, result.expect[2])
+    plt.plot(times, result.expect[0], label=r'$\langle \hat{a}_u^\dagger \hat{a}_u \rangle$')
+    plt.plot(times, result.expect[1], label=r'$\langle \hat{c}^\dagger \hat{c} \rangle$')
+    plt.plot(times, result.expect[2], label=r'$\langle \hat{a}_v^\dagger \hat{a}_v \rangle$')
+    plt.legend()
     plt.show()
 
     input_output_int = Interaction_Picture_Input_Output()
@@ -46,9 +49,10 @@ def main():
                                                          times=times)
 
     plt.figure()
-    plt.plot(times, result.expect[0])
-    plt.plot(times, result.expect[1])
-    plt.plot(times, result.expect[2])
+    plt.plot(times, result.expect[0], label=r'$\langle \hat{a}_{u,I}^\dagger \hat{a}_{u,I} \rangle$')
+    plt.plot(times, result.expect[1], label=r'$\langle \hat{c}^\dagger \hat{c} \rangle$')
+    plt.plot(times, result.expect[2], label=r'$\langle \hat{a}_{v,I}^\dagger \hat{a}_{v,I} \rangle$')
+    plt.legend()
     plt.show()
 
 
@@ -256,7 +260,7 @@ class Pulse:
 
 class Input_Output:
     def __init__(self):
-        self.psi0 = qt.tensor(qt.basis(N, 1), qt.basis(d, 0), qt.basis(M, 0))
+        self.psi0 = qt.tensor(qt.basis(N, n), qt.basis(d, 0), qt.basis(M, 0))
 
         au = qt.destroy(N)
         c = qt.destroy(d)
@@ -299,7 +303,7 @@ class Input_Output:
 
 class Interaction_Picture_Input_Output:
     def __init__(self):
-        self.psi0 = qt.tensor(qt.basis(N2, 20, offset=offset), qt.basis(d, 0), qt.basis(M2, 0))
+        self.psi0 = qt.tensor(qt.basis(N2, n2, offset=offset), qt.basis(d, 0), qt.basis(M2, 0))
 
         au = qt.destroy(N2, offset=offset)
         c = qt.destroy(d)
