@@ -82,10 +82,6 @@ def bloch_messiah_density_matrix():
     bm = SingleModeBlochMessiah(u, f_temp, g_temp, omegas, 12, qt.coherent(12, 0))
     rhov = bm.get_output_state()
 
-    # Find the average number of photons in the mode
-    a = qt.destroy(12)
-    print(qt.expect(a.dag() * a, rhov))
-
     # Find the Wigner function numerically
     xvec = np.linspace(-5, 5, 200)
     w = qt.wigner(rhov, xvec, xvec)
@@ -150,8 +146,7 @@ def squeezed_vacuum_density_matrix():
     plt.colorbar(cs)
     plt.show()
 
-    density_matrix = twq.density_matrix(mu=np.array([0, 0]), cov=cov, cutoff=12)
-
+    density_matrix = twq.density_matrix(mu=np.array([0, 0]), cov=cov / 2, cutoff=12, hbar=1)
     return density_matrix
 
 

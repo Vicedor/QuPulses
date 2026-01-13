@@ -5,9 +5,11 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import qutip as qt
+from qutip.core.dimensions import from_tensor_rep
 from scipy.integrate import quad
 from scipy.interpolate import CubicSpline
 
+from util.bloch_messiah import SingleModeBlochMessiah
 from util import math_functions as m
 from util import physics_functions as ph
 
@@ -24,6 +26,8 @@ tp = 4
 tau = 1
 N = 1
 Delta = 0
+
+M = 20
 
 
 omegas = np.linspace(-4, 4, 1000)
@@ -42,9 +46,15 @@ G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
 
 
 def main():
-    rho_num = numerical_vacuum_density_matrix()
+    #rho_num = numerical_vacuum_density_matrix()
+    rho_bm = bloch_messiah_density_matrix()
     rho_ana = squeezed_vacuum_density_matrix()
 
+    print(np.isclose(rho_bm[0].full() - qt.ptrace(rho_ana, 0).full(), 0))
+    print(np.isclose(rho_bm[1].full() - qt.ptrace(rho_ana, 1).full(), 0))
+
+
+    """
     for i in range(12):
         for j in range(12):
             for k in range(12):
@@ -54,7 +64,8 @@ def main():
                     num = qt.expect(fock_1 * fock_2.dag(), rho_num)
                     ana = rho_ana[i][j][k][l]
                     if not np.isclose(num, ana):
-                        print(f'i={i}, j={j}, k={k}, l={l}, num={num}, ana={ana}')
+                        print(f'i={i}, j={j}, k={k}, l={l}, diff={num-ana}')
+    """
 
 
 def numerical_vacuum_density_matrix():
@@ -63,6 +74,12 @@ def numerical_vacuum_density_matrix():
 
     psi1 = qt.ptrace(final_state, 1)
     psi2 = qt.ptrace(final_state, 2)
+
+    a1 = qt.tensor(qt.destroy(M), qt.qeye(M))
+    a2 = qt.tensor(qt.qeye(M), qt.destroy(M))
+
+    print('a1daga1:', qt.expect(a1.dag() * a1, qt.ptrace(final_state, sel=[1, 2])))
+    print('a2daga2:', qt.expect(a2.dag() * a2, qt.ptrace(final_state, sel=[1, 2])))
 
     xvec = np.linspace(-5, 5, 200)
     w1 = qt.wigner(psi1, xvec, xvec, g=np.sqrt(2))
@@ -84,6 +101,64 @@ def numerical_vacuum_density_matrix():
     plt.colorbar(cs)
     plt.show()
     return qt.ptrace(final_state, sel=[1, 2])
+
+
+def bloch_messiah_density_matrix():
+    g1_list = np.zeros([len(omegas), len(omegas)], dtype=np.complex128)
+    for i, omega1 in enumerate(omegas):
+        for j, omega2 in enumerate(omegas):
+            g1_list[i, j] = g1_fock(omega1, omega2)
+        if (i + 1) % 10 == 0:
+            print(i + 1)
+
+    vals, vecs = ph.convert_autocorr_mat_to_vals_and_vecs(g1_list, omegas, n=2, trim=True)
+
+    v1 = CubicSpline(omegas, -vecs[0].real + 1j * vecs[0].imag)
+    v2 = CubicSpline(omegas, -vecs[1].real + 1j * vecs[1].imag)
+
+    f1_temp = lambda omega: F(omega).conjugate() * v1(omega)
+    g1_temp = lambda omega: G(omega) * v1(2*Delta - omega).conjugate()
+    f2_temp = lambda omega: F(omega).conjugate() * v2(omega)
+    g2_temp = lambda omega: G(omega) * v2(2*Delta - omega).conjugate()
+
+    bm1 = SingleModeBlochMessiah(u, f1_temp, g1_temp, omegas, M, qt.coherent(M, 0))
+    rhov1 = bm1.get_output_state()
+
+    # Find the Wigner function numerically
+    xvec = np.linspace(-5, 5, 200)
+    w = qt.wigner(rhov1, xvec, xvec)
+
+    # normalize colors to the length of data
+    nrm = mpl.colors.Normalize(w.min(), w.max())
+
+    # Plot the Wigner function
+    fig, axs = plt.subplots(1, 1)
+    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    plt.colorbar(cs)
+    plt.show()
+
+    bm2 = SingleModeBlochMessiah(u, f2_temp, g2_temp, omegas, M, qt.coherent(M, 0))
+    rhov2 = bm2.get_output_state()
+
+    # Find the Wigner function numerically
+    xvec = np.linspace(-5, 5, 200)
+    w = qt.wigner(rhov2, xvec, xvec)
+
+    # normalize colors to the length of data
+    nrm = mpl.colors.Normalize(w.min(), w.max())
+
+    # Plot the Wigner function
+    fig, axs = plt.subplots(1, 1)
+    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    plt.colorbar(cs)
+    plt.show()
+
+    a = qt.destroy(M)
+
+    print('a1daga1:', qt.expect(a.dag() * a, rhov1))
+    print('a2daga2:', qt.expect(a.dag() * a, rhov2))
+
+    return rhov1, rhov2
 
 
 def squeezed_vacuum_density_matrix():
@@ -109,6 +184,29 @@ def squeezed_vacuum_density_matrix():
     A1, C1, E1, B1, D1 = mode1_coefs
     A2, C2, E2, G2, B2, D2, F2, H2 = mode2_coefs
 
+    E_mat = np.array([[A1, C1, E1, 0],
+                      [A2, C2, E2, G2]])
+    F_mat = np.array([[B1, D1, 0, 0],
+                      [B2, D2, F2, H2]])
+
+    A11 = E_mat + np.conjugate(E_mat) + F_mat + np.conjugate(F_mat)
+    A12 = 1j*(E_mat - np.conjugate(E_mat) + np.conjugate(F_mat) - F_mat)
+    A21 = 1j*(np.conjugate(E_mat) - E_mat + np.conjugate(F_mat) - F_mat)
+    A22 = E_mat + np.conjugate(E_mat) - F_mat - np.conjugate(F_mat)
+
+    A = 0.5 * np.block([[A11, A12], [A21, A22]])
+
+    print('A', A)
+
+    cov = A @ A.T
+
+    print('cov', cov)
+
+    """ 
+    print(E_mat @ np.conjugate(E_mat.T))
+    print(F_mat @ np.conjugate(F_mat.T))
+    print(E_mat @ np.conjugate(E_mat.T) - F_mat @ np.conjugate(F_mat.T))
+
     X11 = np.array([[A1, C1], [A2, C2]])
     X12 = np.array([[E1, 0], [E2, G2]])
     Y11 = np.array([[B1, D1], [B2, D2]])
@@ -126,12 +224,15 @@ def squeezed_vacuum_density_matrix():
     A = np.block([[R11, S11], [T11, U11]]) / 2
     B = np.block([[R12, S12], [T12, U12]]) / 2
 
+    print(A @ A.T)
+    print(A.T @ A)
+
     cov = A.T @ A + B @ B.T
     I = np.array([[1, 0], [0, 1]])
     print(cov)
     #cov = 1/2 * np.block([[I, 1j*I], [I, -1j*I]]) * cov * np.block([[I, I], [-1j*I, 1j*I]])
     #print(np.block([[I, I], [-1j*I, 1j*I]]))
-    #print(cov)
+    #print(cov)"""
 
     cov_inv = np.linalg.inv(cov)
 
@@ -171,9 +272,53 @@ def squeezed_vacuum_density_matrix():
     plt.colorbar(cs)
     plt.show()
 
-    density_matrix = twq.density_matrix(mu=np.array([0, 0, 0, 0]), cov=cov, cutoff=12)
+    density_matrix = twq.density_matrix(mu=np.array([0, 0, 0, 0]), cov=cov / 2, cutoff=M, hbar=1)
+    density_matrix = convert_density_matrix(density_matrix)
+
+    a1 = qt.tensor(qt.destroy(M), qt.qeye(M))
+    a2 = qt.tensor(qt.qeye(M), qt.destroy(M))
+
+    print('a1daga1:', qt.expect(a1.dag() * a1, density_matrix))
+    print('a2daga2:', qt.expect(a2.dag() * a2, density_matrix))
+
+    # Find the Wigner function numerically
+    xvec = np.linspace(-5, 5, 200)
+    w = qt.wigner(qt.ptrace(density_matrix, 0), xvec, xvec)
+
+    # normalize colors to the length of data
+    nrm = mpl.colors.Normalize(w.min(), w.max())
+
+    # Plot the Wigner function
+    fig, axs = plt.subplots(1, 1)
+    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    plt.colorbar(cs)
+    plt.show()
+
+    # Find the Wigner function numerically
+    xvec = np.linspace(-5, 5, 200)
+    w = qt.wigner(qt.ptrace(density_matrix, 1), xvec, xvec)
+
+    # normalize colors to the length of data
+    nrm = mpl.colors.Normalize(w.min(), w.max())
+
+    # Plot the Wigner function
+    fig, axs = plt.subplots(1, 1)
+    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    plt.colorbar(cs)
+    plt.show()
 
     return density_matrix
+
+
+def convert_density_matrix(density_matrix):
+    new_density_matrix = np.zeros([M**2, M**2], dtype=np.complex128)
+    for n1 in range(M):
+        for m1 in range(M):
+            for n2 in range(M):
+                for m2 in range(M):
+                    rhon1n2m1m2 = density_matrix[n1][m1][n2][m2]
+                    new_density_matrix[n1 * M + n2, m1 * M + m2] = rhon1n2m1m2
+    return qt.Qobj(new_density_matrix, dims=[[M, M], [M, M]])
 
 
 def overlap(f, g, xs):
