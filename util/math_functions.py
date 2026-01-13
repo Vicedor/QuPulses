@@ -7,9 +7,20 @@ import qutip as qt
 from scipy.special import erf
 from scipy.integrate import quad, trapezoid, complex_ode
 from scipy.interpolate import CubicSpline
-from scipy.fft import fft, fftshift, ifft, ifftshift
+from scipy.fft import fft, fftshift, ifft, ifftshift, fftfreq
 from typing import Callable, List, Tuple
 import warnings
+
+
+def overlap(f, g, xs):
+    """
+    Calculates the inner product between functions f and g given by <f|g>
+    :param f: Leftmost function in the inner product
+    :param g: Rightmost function in the inner product
+    :param xs: The axis which the functions are defined over
+    :return: The value of the inner product
+    """
+    return quad(lambda omega: np.conjugate(f(omega)) * g(omega), xs[0], xs[-1], complex_func=True)[0]
 
 
 def exponential(g: float) -> Callable[[float], float]:
@@ -43,18 +54,6 @@ def freq_mod_gaussian(tp: float, tau: float, w: float) -> Callable[[float], floa
     return lambda t: np.exp(1j*w*t) * g(t)
 
 
-def gaussian_integral(tp: float, tau: float) -> Callable[[float], float]:
-    """
-    Returns a function which evaluates the integral of a gaussian function given the tp and tau parameters
-    :param tp: The offset in time of the gaussian
-    :param tau: The width of the gaussian
-    :return: A function evaluating the integral of gaussian with the given parameters
-    """
-    warnings.warn('Warning: This returns the integral of a gaussian, not a Gaussian squared')
-    a = np.pi ** 0.25 * np.sqrt(tau) / np.sqrt(2)
-    return lambda t: a * (erf((t - tp)/(np.sqrt(2) * tau)) + erf(tp/(np.sqrt(2) * tau)))
-
-
 def gaussian_squared_integral(tp: float, tau: float) -> Callable[[float], float]:
     """
     Returns a function which evaluates the integral of the square of a gaussian function given the tp and tau parameters
@@ -62,7 +61,7 @@ def gaussian_squared_integral(tp: float, tau: float) -> Callable[[float], float]
     :param tau: The width of the gaussian
     :return: A function evaluating the integral of gaussian with the given parameters
     """
-    return lambda t: 0.5 * (erf((t - tp) / tau) + erf(tp / tau))
+    return lambda t: 0.5 * (erf((t - tp) / tau) + 1)
 
 
 def hermite_gaussian_integral(tp: float, tau: float, order: int) -> Callable[[float], float]:
@@ -80,8 +79,7 @@ def hermite_gaussian_integral(tp: float, tau: float, order: int) -> Callable[[fl
         return lambda t: erf((t - tp)/tau) / 2 - (t - tp)/tau * np.exp(-((t - tp)/tau)**2) / np.sqrt(np.pi) + 0.5
     if order == 2:
         return lambda t: erf((t - tp)/tau) / 2 - np.exp(-((t - tp)/tau)**2) * (((t - tp)/tau)**3
-                                                                               + (t - tp)/(2*tau)) / np.sqrt(np.pi)\
-                         + 0.5
+                                                                               + (t - tp)/(2*tau)) / np.sqrt(np.pi) + 0.5
 
 
 def two_mode_integral(tp: float, tau: float) -> Callable[[float], float]:
@@ -410,24 +408,24 @@ def fast_fourier_transform(xs: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, n
     :param u: The function value at the sample points
     :return: A tuple of a list of frequencies and then the Fourier transform values at those frequencies (freq, u)
     """
-    u_fft = fftshift(fft(u, norm='ortho')) * 4  # Why factor of 4???
+    n = len(xs)
     dx = xs[1] - xs[0]
-    N = len(xs)
-    freq = np.array([2*np.pi * n / (N*dx) for n in range(N)]) - np.pi / dx
+    u_fft = fftshift(ifft(u, n=n, norm='ortho'))
+    freq = fftshift(2*np.pi * fftfreq(n, d=dx))
     return freq, u_fft
 
 
-def inverse_fast_fourier_transform(ks: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def inverse_fast_fourier_transform(ks: np.ndarray, u: np.ndarray, x0: float = 0) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implements the inverse Fast Fourier transform, using the reverse process of the fast fourier transform procedure
     :param ks: The array of frequencies the spectrum is defined across
     :param u: The value of the spectrum at the given frequencies
     :return: A tuple of a list of positions and then the Inverse Fourier Transform at these positions (xs, u)
     """
-    u_ifft = ifft(ifftshift(u), norm='ortho') / 4
+    n = len(ks)
     dk = ks[1] - ks[0]
-    N = len(ks)
-    xs = np.array([2 * np.pi * n / (N * dk) for n in range(N)])
+    u_ifft = fft(ifftshift(u), n=n, norm='ortho')
+    xs = 2*np.pi * fftfreq(n, d=dk) + x0
     return xs, u_ifft
 
 
