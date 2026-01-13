@@ -29,7 +29,7 @@ def create_bs_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, phi: float) -> q
     :param phi: The phase difference for the beam-splitter
     :return: A qutip unitary of the beam-splitter operator
     """
-    return (1j * theta * (a.dag() * b * np.exp(1j * phi) + a * b.dag() * np.exp(-1j * phi))).expm()#method=sparse
+    return (1j * theta * (a.dag() * b * np.exp(1j * phi) + a * b.dag() * np.exp(-1j * phi))).expm()#method='sparse')
 
 
 def create_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float) -> qt.Qobj:
@@ -40,7 +40,7 @@ def create_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float) -> qt.Qobj:
     :param theta: Relative phase
     :return: QuTip operator for the phase interaction
     """
-    return (1j * theta * (a.dag() * a - b.dag() * b)).expm()#method=sparse
+    return (1j * theta * (a.dag() * a - b.dag() * b)).expm()#method='sparse')
 
 
 def create_bs_and_phase_interaction(a: qt.Qobj, b: qt.Qobj, theta: float, psi: float, delta: float) -> qt.Qobj:
@@ -306,6 +306,7 @@ class SingleModeBlochMessiah:
         print('coherent target, no vacuum:', A1.conjugate() * A1 + A1.conjugate() * B1 + B1.conjugate() * A1 + B1.conjugate() * B1)
         print('coherent target2:', A1 * A1 + 3 * A1 * B1 + B1 * B1 + C1 * D1)
         print('coherent target2, no vacuum:', A1 * A1 + 2 * A1 * B1 + B1 * B1)
+        print('vacuum:', B1.conjugate() * B1 + D1.conjugate() * D1)
 
         norm = np.sqrt(A1.conjugate() * A1 - B1.conjugate() * B1 + C1.conjugate() * C1 - D1.conjugate() * D1)
         theta_vac = np.arccos(norm)
