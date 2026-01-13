@@ -121,7 +121,7 @@ def vacuum_state_density_matrix():
     cov22 = alpha * np.conjugate(alpha) / v_l**2
 
     cov = np.array([[cov11, cov12],
-                     [cov12, cov22]])
+                    [cov12, cov22]])
 
     density_matrix = qt.Qobj(twq.density_matrix(mu=np.array([0, 0]), cov=cov / 2, cutoff=M, normalize=True, hbar=1))
 
@@ -129,8 +129,6 @@ def vacuum_state_density_matrix():
     cat_operator = (qt.displace(M, alpha_v) + 1j * qt.displace(M, -alpha_v)) / np.sqrt(2)
 
     density_matrix = cat_operator * density_matrix * cat_operator.dag()
-
-    print(density_matrix.full()[0, 0])
 
     # Find the Wigner function numerically
     xvec = np.linspace(-5, 5, 200)

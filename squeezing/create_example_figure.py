@@ -1,26 +1,20 @@
-#! python3
-from typing import List, Tuple, Callable
-import time
-
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 import numpy as np
 import qutip as qt
 from scipy.integrate import quad
-from scipy.interpolate import CubicSpline
-
-from util.bloch_messiah import SingleModeBlochMessiah
 from util import math_functions as m
-from util import physics_functions as ph
-
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 from thewalrus import quantum as twq
+
+from typing import Tuple, List
 
 
 gamma = 1
 xi = 0.1
 
+alpha = 1 + 1j
 n = 1
-alpha = 1
+
 tp = 4
 tau = 1
 N = 1
@@ -28,12 +22,15 @@ Delta = 0
 
 M = 50
 
+# Array of frequencies
+omegas = np.linspace(-4, 4, 1000)
 
-omegas = np.linspace(-6, 6, 1000)
+# A gaussian input pulse in frequency domain (fourier transform of time domain)
 u_tilde = lambda omega: np.sqrt(tau) / np.pi**(1/4) * np.exp(-tau**2 / 2 * omega**2 + 1j * tp * omega)
 u = lambda omega: m.normalized_hermite_polynomial(tp, tau, 0)(omega) * u_tilde(omega)
 
 
+# The functions needed for a TWPA transformation of input pulse
 chi_X = lambda omega, xi: - ((gamma / 2 + xi)**2 + omega**2) / ((gamma/2 - 1j*omega)**2 - xi**2)
 chi_P = lambda omega, xi: - ((gamma / 2 - xi)**2 + omega**2) / ((gamma/2 - 1j*omega)**2 - xi**2)
 
@@ -45,36 +42,129 @@ G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
 
 
 def main():
-    #rho_bm = bloch_messiah_density_matrix()
-    rho_ana = squeezed_vacuum_density_matrix()
+    coherent_state_dm = squeezed_coherent_state_density_matrix()
+    schrodinger_cat_dm = schrodinger_cat_density_matrix()
+    single_photon_dm = single_photon_density_matrix()
 
 
-def bloch_messiah_density_matrix():
-    g1_list = np.zeros([len(omegas), len(omegas)], dtype=np.complex128)
-    for i, omega1 in enumerate(omegas):
-        for j, omega2 in enumerate(omegas):
-            g1_list[i, j] = g1_fock(omega1, omega2)
-        if (i + 1) % 10 == 0:
-            print(i + 1)
+def overlap(f, g, xs=omegas):
+    """
+    Calculates the inner product between functions f and g given by <f|g>
+    :param f: Leftmost function in the inner product
+    :param g: Rightmost function in the inner product
+    :param xs: The axis which the functions are defined over
+    :return: The value of the inner product
+    """
+    return quad(lambda omega: np.conjugate(f(omega)) * g(omega), xs[0], xs[-1], complex_func=True)[0]
 
-    vals, vecs = ph.convert_autocorr_mat_to_vals_and_vecs(g1_list, omegas, n=2, trim=True)
 
-    v1 = CubicSpline(omegas, -vecs[0].real + 1j * vecs[0].imag)
-    v2 = CubicSpline(omegas, -vecs[1].real + 1j * vecs[1].imag)
+def get_parameters():
+    # In the following we use the "Note on parametric amplification vacuum states" to find the coherent state
+    # output mode of the TWPA for alpha = 0
+    f_u = lambda omega: F(omega) * u(omega)
+    g_u = lambda omega: G(2*Delta - omega) * u(2*Delta - omega).conjugate()
 
-    f1_temp = lambda omega: F(omega).conjugate() * v1(omega)
-    g1_temp = lambda omega: G(omega) * v1(2*Delta - omega).conjugate()
-    f2_temp = lambda omega: F(omega).conjugate() * v2(omega)
-    g2_temp = lambda omega: G(omega) * v2(2*Delta - omega).conjugate()
+    zeta_u = np.sqrt(overlap(f_u, f_u))
+    xi_u = np.sqrt(overlap(g_u, g_u))
 
-    t0 = time.time()
-    bm1 = SingleModeBlochMessiah(u, f1_temp, g1_temp, omegas, M, qt.basis(M, n))
-    rhov1 = bm1.get_output_state()
-    t1 = time.time()
+    f_u = lambda omega: F(omega) * u(omega) / zeta_u
+    g_u = lambda omega: G(2*Delta - omega) * u(2*Delta - omega).conjugate() / xi_u
+
+    fu_gu = overlap(f_u, g_u)
+
+    v_l = np.sqrt(alpha * np.conjugate(alpha) * (zeta_u**2 + xi_u**2) + np.conjugate(alpha)**2 * zeta_u * xi_u * fu_gu + alpha ** 2 * zeta_u * xi_u * fu_gu.conjugate())
+    return zeta_u, xi_u, f_u, g_u, v_l
+
+
+def squeezed_coherent_state_density_matrix():
+    zeta_u, xi_u, f_u, g_u, v_l = get_parameters()
+
+    # Define v(omega) for a single-mode transformation (eq. 10 in the manuscript)
+    v = lambda omega: (alpha * zeta_u * f_u(omega) + np.conjugate(alpha) * xi_u * g_u(omega)) / v_l
+
+    # Define the fv and gv functions as integrals over F and G (delta function in omega', so integrals are easily found)
+    f_temp = lambda omega: F(omega).conjugate() * v(omega)
+    g_temp = lambda omega: gamma_N_minus(Delta - omega) * v(2 * Delta - omega).conjugate()
+
+    # Normalize fv (gv is not used in the following, but could be normalized in the same way)
+    zeta_v = np.sqrt(overlap(f_temp, f_temp))
+    f_v = lambda x: f_temp(x) / zeta_v
+
+    # Define the coherent addition to the covariant matrix eq. 37 in the manuscript
+    cov11 = 16 * zeta_v**2 * np.real(alpha * overlap(f_v, u))**2 - 16 * zeta_v * alpha * np.conjugate(alpha) / v_l * np.real(alpha * overlap(f_v, u)) + 4 * (alpha * np.conjugate(alpha))**2 / v_l**2
+    # Add the vacuum covariance matrix as in eq. 38 in the manuscript
+    cov11 = cov11 + 4 * zeta_v**2 + (alpha * np.conjugate(alpha)) / v_l**2 - 4 * zeta_v * np.real(alpha * overlap(f_v, u)) / v_l
+
+    cov12 = - 2 *zeta_v * np.imag(overlap(f_v, u) * alpha) / v_l
+    cov22 = alpha * np.conjugate(alpha) / v_l**2
+
+    # Define the displacement vector as in eq. 39 in the manuscript
+    displace = np.array([np.sqrt(2)*(2 * zeta_v * np.real(alpha * overlap(f_v, u)) - alpha * np.conjugate(alpha) / v_l), 0])
+
+    cov = np.array([[cov11, cov12],
+                     [cov12, cov22]]) - 2 * np.outer(displace, displace)
+
+    # In the following, we plot the Wigner function of the state with this covariance matrix
+    cov_inv = np.linalg.inv(cov)
+    det_cov = np.linalg.det(cov)
+
+    alpha_vec = lambda x1, y1: (np.array([[x1, y1]]) - displace).T
+
+    xvec = np.linspace(-5, 5, 200)
+    w = np.zeros((len(xvec), len(xvec)))
+
+    for i, y1 in enumerate(xvec):
+        for j, x1 in enumerate(xvec):
+            val = (alpha_vec(x1, y1).T @ cov_inv @ alpha_vec(x1, y1))[0, 0]
+            w[i, j] = np.exp(-val) / np.sqrt(det_cov) / np.pi
+
+    nrm = mpl.colors.Normalize(w.min(), w.max())
+
+    fig, axs = plt.subplots(1, 1)
+    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    plt.colorbar(cs)
+    plt.show()
+
+    # We compute the density matrix of the state using multidimensional Hermite polynomials
+    density_matrix = twq.density_matrix(mu=displace, cov=cov / 2, cutoff=M, normalize=True, hbar=1)
+
+    return density_matrix
+
+
+def schrodinger_cat_density_matrix():
+    zeta_u, xi_u, f_u, g_u, v_l = get_parameters()
+
+    # Define v(omega) for a single-mode transformation (eq. 10 in the manuscript)
+    v = lambda omega: (alpha * zeta_u * f_u(omega) + np.conjugate(alpha) * xi_u * g_u(omega)) / v_l
+
+    # Define the fv and gv functions as integrals over F and G (delta function in omega', so integrals are easily found)
+    f_temp = lambda omega: F(omega).conjugate() * v(omega)
+    g_temp = lambda omega: gamma_N_minus(Delta - omega) * v(2 * Delta - omega).conjugate()
+
+    # Normalize fv (gv is not used in the following, but could be normalized in the same way)
+    zeta_v = np.sqrt(overlap(f_temp, f_temp))
+    f_v = lambda x: f_temp(x) / zeta_v
+
+    # Define the covariance matrix as in eq. 38 in the manuscript
+    cov11 = 4 * zeta_v**2 + (alpha * np.conjugate(alpha)) / v_l**2 - 4 * zeta_v * np.real(alpha * overlap(f_v, u)) / v_l
+    cov12 = - 2 *zeta_v * np.imag(overlap(f_v, u) * alpha) / v_l
+    cov22 = alpha * np.conjugate(alpha) / v_l**2
+
+    cov = np.array([[cov11, cov12],
+                    [cov12, cov22]])
+
+    # Find the density matrix of the vacuum state using the multidimensional Hermite polynomials
+    density_matrix = qt.Qobj(twq.density_matrix(mu=np.array([0, 0]), cov=cov / 2, cutoff=M, normalize=True, hbar=1))
+
+    # Define the operator that creates a cat state from vacuum and apply to vacuum state eq. 41
+    alpha_v = (2*zeta_u*np.real(alpha * overlap(v, f_u)) - alpha * np.conjugate(alpha) / v_l)
+    cat_operator = (qt.displace(M, alpha_v) + 1j * qt.displace(M, -alpha_v)) / np.sqrt(2)
+
+    density_matrix = cat_operator * density_matrix * cat_operator.dag()
 
     # Find the Wigner function numerically
     xvec = np.linspace(-5, 5, 200)
-    w = qt.wigner(rhov1, xvec, xvec)
+    w = qt.wigner(density_matrix, xvec, xvec)
 
     # normalize colors to the length of data
     nrm = mpl.colors.Normalize(w.min(), w.max())
@@ -85,86 +175,11 @@ def bloch_messiah_density_matrix():
     plt.colorbar(cs)
     plt.show()
 
-    t2 = time.time()
-    bm2 = SingleModeBlochMessiah(u, f2_temp, g2_temp, omegas, M, qt.basis(M, n))
-    rhov2 = bm2.get_output_state()
-    t3 = time.time()
-    print(f'Numerical single mode solution time={t3 - t2 + t1 - t0}')
-
-    # Find the Wigner function numerically
-    xvec = np.linspace(-5, 5, 200)
-    w = qt.wigner(rhov2, xvec, xvec)
-
-    # normalize colors to the length of data
-    nrm = mpl.colors.Normalize(w.min(), w.max())
-
-    # Plot the Wigner function
-    fig, axs = plt.subplots(1, 1)
-    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
-    plt.colorbar(cs)
-    plt.show()
-
-    a = qt.destroy(M)
-
-    print('a1daga1:', qt.expect(a.dag() * a, rhov1))
-    print('a2daga2:', qt.expect(a.dag() * a, rhov2))
-
-    return rhov1, rhov2
+    return density_matrix
 
 
-def squeezed_vacuum_density_matrix():
-    """
-    g1_list = np.zeros([len(omegas), len(omegas)], dtype=np.complex128)
-    for i, omega1 in enumerate(omegas):
-        for j, omega2 in enumerate(omegas):
-            g1_list[i, j] = g1_fock(omega1, omega2)
-        if (i + 1) % 10 == 0:
-            print(i + 1)
-
-    vals, vecs = ph.convert_autocorr_mat_to_vals_and_vecs(g1_list, omegas, n=2, trim=True)
-    print('vals:', vals)
-
+def single_photon_density_matrix():
     v1, v2 = get_v1_and_v2()
-
-    v1_1 = CubicSpline(omegas, -vecs[0].real + 1j * vecs[0].imag)
-    v2_1 = CubicSpline(omegas, -vecs[1].real + 1j * vecs[1].imag)
-
-    fu_temp = lambda omega: F(omega) * u(omega)
-    gu_temp = lambda omega: G(2*Delta - omega) * u(2*Delta - omega).conjugate()
-
-    zeta_u = np.sqrt(overlap(fu_temp, fu_temp, omegas))
-    xi_u = np.sqrt(overlap(gu_temp, gu_temp, omegas))
-
-    fu = lambda omega: fu_temp(omega) / zeta_u
-    gu = lambda omega: gu_temp(omega) / xi_u
-
-    gufu = overlap(gu, fu, omegas)
-    hu = lambda omega: (gu(omega) - gufu * fu(omega)) / np.sqrt(1 - gufu * np.conjugate(gufu))
-
-    plt.figure()
-    plt.plot(omegas, np.real(v1(omegas)))
-    plt.plot(omegas, np.real(v1_1(omegas)))
-    plt.show()
-
-    plt.figure()
-    plt.plot(omegas, np.imag(v1(omegas)))
-    plt.plot(omegas, np.imag(v1_1(omegas)))
-    plt.show()
-
-    plt.figure()
-    plt.plot(omegas, np.real(v2(omegas)))
-    plt.plot(omegas, np.real(v2_1(omegas)))
-    plt.show()
-
-    plt.figure()
-    plt.plot(omegas, np.imag(v2(omegas)))
-    plt.plot(omegas, np.imag(v2_1(omegas)))
-    plt.show()
-    """
-    v1, v2 = get_v1_and_v2()
-
-    print('norm_v1:', overlap(v1, v1, omegas))
-    print('norm_v2:', overlap(v2, v2, omegas))
 
     f1_temp = lambda omega: F(omega).conjugate() * v1(omega)
     g1_temp = lambda omega: G(omega) * v1(2*Delta - omega).conjugate()
@@ -191,12 +206,18 @@ def squeezed_vacuum_density_matrix():
 
     cov = A @ A.T
 
-    print(E_mat)
-    print(F_mat)
-    print(cov)
-
-    t0 = time.time()
     vacuum_density_matrix = twq.density_matrix(mu=np.array([0, 0, 0, 0]), cov=cov / 2, cutoff=M, hbar=1)
+
+    def convert_density_matrix(density_matrix):
+        new_density_matrix = np.zeros([M ** 2, M ** 2], dtype=np.complex128)
+        for n1 in range(M):
+            for m1 in range(M):
+                for n2 in range(M):
+                    for m2 in range(M):
+                        rhon1n2m1m2 = density_matrix[n1][m1][n2][m2]
+                        new_density_matrix[n1 * M + n2, m1 * M + m2] = rhon1n2m1m2
+        return qt.Qobj(new_density_matrix, dims=[[M, M], [M, M]])
+
     vacuum_density_matrix = convert_density_matrix(vacuum_density_matrix)
 
     fu_temp = lambda omega: F(omega) * u(omega)
@@ -211,13 +232,8 @@ def squeezed_vacuum_density_matrix():
     gufu = overlap(gu, fu, omegas)
     fugu = np.conjugate(gufu)
 
-    print('val1:', (np.sqrt((n * (zeta_u**2 + xi_u**2))**2 - 4 * zeta_u**2 * xi_u**2 * (1 - gufu * np.conjugate(gufu)) * n**2) + n * (zeta_u**2 + xi_u**2)) / 2)
-    print('val2:', (-np.sqrt((n * (zeta_u ** 2 + xi_u ** 2))**2 - 4 * zeta_u ** 2 * xi_u ** 2 * (1 - gufu * np.conjugate(gufu)) * n ** 2) + n * (zeta_u ** 2 + xi_u ** 2)) / 2)
-
     matrix = np.array([[n * zeta_u**2 + n * xi_u**2 * gufu * fugu, n*xi_u**2 * fugu * np.sqrt(1 - gufu*fugu)],
                        [n*xi_u**2 * gufu * np.sqrt(1 - gufu*fugu), n * xi_u**2 * (1 - fugu * gufu)]])
-
-    print('gufu:', gufu)
 
     #sqrt = np.sqrt(n**2 * (zeta_u**2 + xi_u**2)**2 - 4 * n**2 * zeta_u**2 * xi_u ** 2 * (1 - gufu * fugu))
     sqrt = np.sqrt(1 + ((zeta_u ** 2 + xi_u ** 2) ** 2 - 1) * fugu * gufu)
@@ -227,26 +243,7 @@ def squeezed_vacuum_density_matrix():
     coef12 = (n * zeta_u ** 2 + n * xi_u ** 2 * (2*gufu * fugu - 1) - sqrt) / (2 * n * xi_u**2 * gufu * np.sqrt(1 - gufu*fugu))
     coef22 = 1
 
-    print('coef1:', coef1)
-    print('coef1:', (1 + 2*xi_u**2 * fugu*gufu + sqrt) / (2 * xi_u**2 * gufu * np.sqrt(1 - fugu*gufu)))
-
-    print('norm:', np.sqrt(sqrt / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)) * (sqrt + 1 + 2 * xi_u**2 * gufu*fugu)))
-    print('norm:', np.sqrt(coef1 * np.conjugate(coef1) + coef2 * np.conjugate(coef2)))
-
-    print('coef2:', coef12)
-    print('coef2:', (1 + 2*xi_u**2 * fugu*gufu - sqrt) / (2 * xi_u**2 * gufu * np.sqrt(1 - fugu*gufu)))
-
     norm2 = np.sqrt(sqrt / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)) * (sqrt - 1 - 2 * xi_u**2 * gufu*fugu))
-    print('norm2:', np.sqrt(coef12 * np.conjugate(coef12) + coef22 * np.conjugate(coef22)))
-    print('norm2:', norm2)
-
-    print('vec1:', coef1 / np.sqrt(coef1 * np.conjugate(coef1) + coef2 * np.conjugate(coef2)),
-          coef2 / np.sqrt(coef1 * np.conjugate(coef1) + coef2 * np.conjugate(coef2)))
-    print('vec1:', coef1 / np.sqrt(sqrt * (sqrt + zeta_u**2 + xi_u**2 - 2 * xi_u**2 * (1 - gufu * fugu)) / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)))
-          , coef2 / np.sqrt(sqrt * (sqrt + zeta_u**2 + xi_u**2 - 2 * xi_u**2 * (1 - gufu * fugu)) / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu))))
-    #print('norm:', coef1 / np.sqrt(sqrt * (sqrt - zeta_u**2 - xi_u**2 + 2 * xi_u**2 * (1 - gufu * fugu)) / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu))))
-
-    print(np.linalg.eig(matrix))
 
     b1 = qt.tensor(qt.destroy(M), qt.qeye(M))
     b2 = qt.tensor(qt.qeye(M), qt.destroy(M))
@@ -259,21 +256,7 @@ def squeezed_vacuum_density_matrix():
           - zeta_u * np.sqrt(1 - overlap(fu, v1, omegas) * overlap(v1, fu, omegas)) * b2
           - xi_u * np.sqrt(1 - overlap(v1, gu, omegas) * overlap(gu, v1, omegas)) * b2.dag())
 
-    print('A:', overlap(fu, v1, omegas))
-    print('A:', (1 + 2*xi_u**2 * fugu*gufu + sqrt) / (2 * xi_u**2 * gufu * np.sqrt(1 - fugu*gufu)) / np.sqrt(sqrt / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)) * (sqrt + 1 + 2 * xi_u**2 * gufu*fugu)))
-    print('B:', overlap(v1, gu, omegas))
-    print('B:', (1 + 2*xi_u**2 * fugu*gufu - sqrt) / (2 * xi_u**2 * gufu * np.sqrt(1 - fugu*gufu)) / np.sqrt(sqrt / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)) * (sqrt - 1 - 2 * xi_u**2 * gufu*fugu)))
-    print('C:', np.sqrt(1 - overlap(fu, v1, omegas) * overlap(v1, fu, omegas)))
-    print('C:', (1 + 2*xi_u**2 * fugu*gufu - sqrt) / (2 * xi_u**2 * gufu * np.sqrt(1 - fugu*gufu)) / np.sqrt(sqrt / (2 * xi_u**4 * fugu * gufu * (1 - fugu * gufu)) * (sqrt - 1 - 2 * xi_u**2 * gufu*fugu)))
-    print('D:', 1 - overlap(v1, gu, omegas) * overlap(gu, v1, omegas))
-    print('zeta_u:', zeta_u)
-    print('xi_u:', xi_u)
-
     density_matrix = au.dag() * vacuum_density_matrix * au
-    t1 = time.time()
-    print(f'Analytical two mode solution time={t1 - t0}')
-    print('a1daga1', qt.expect(b1.dag() * b1, density_matrix))
-    print('a2daga2', qt.expect(b2.dag() * b2, density_matrix))
 
     # Find the Wigner function numerically
     xvec = np.linspace(-5, 5, 200)
@@ -302,27 +285,6 @@ def squeezed_vacuum_density_matrix():
     plt.show()
 
     return density_matrix
-
-
-def convert_density_matrix(density_matrix):
-    new_density_matrix = np.zeros([M**2, M**2], dtype=np.complex128)
-    for n1 in range(M):
-        for m1 in range(M):
-            for n2 in range(M):
-                for m2 in range(M):
-                    rhon1n2m1m2 = density_matrix[n1][m1][n2][m2]
-                    new_density_matrix[n1 * M + n2, m1 * M + m2] = rhon1n2m1m2
-    return qt.Qobj(new_density_matrix, dims=[[M, M], [M, M]])
-
-
-def overlap(f, g, xs):
-    return quad(lambda omega: np.conjugate(f(omega)) * g(omega), xs[0], xs[-1], complex_func=True)[0]
-
-
-def g1_fock(omega1, omega2):
-    term1 = n * F(omega1).conjugate() * u(omega1).conjugate() * F(omega2) * u(omega2)
-    term2 = n * G(omega1) * u(2*Delta - omega1) * G(omega2).conjugate() * u(2*Delta - omega2).conjugate()
-    return term1 + term2
 
 
 def get_v1_and_v2():
@@ -375,8 +337,6 @@ def get_mode_coefs(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[floa
     zeta2 = np.sqrt(overlap(f2_temp, f2_temp, xs))
     xi2 = np.sqrt(overlap(g2_temp, g2_temp, xs))
 
-    print(zeta1, xi1, zeta2, xi2)
-
     f1 = lambda omega: f1_temp(omega) / zeta1
     g1 = lambda omega: g1_temp(omega) / xi1
 
@@ -421,16 +381,6 @@ def get_mode_coefs(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[floa
 
     k4s4 = overlap(k4, s4, xs)
 
-    plt.figure()
-    plt.plot(omegas, np.real(k1(omegas)))
-    plt.plot(omegas, np.real(k2(omegas)), '--')
-    plt.show()
-
-    plt.figure()
-    plt.plot(omegas, np.imag(k1(omegas)))
-    plt.plot(omegas, np.imag(k2(omegas)), '--')
-    plt.show()
-
     """ Getting all coefficients """
 
     "First mode"
@@ -440,8 +390,6 @@ def get_mode_coefs(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[floa
     C1 = zeta1 * np.sqrt(1 - uf1.conjugate() * uf1) * k1h1.conjugate()
     D1 = xi1 * np.sqrt(1 - ug1.conjugate() * ug1)
     E1 = zeta1 * np.sqrt(1 - uf1.conjugate() * uf1) * np.sqrt(1 - k1h1.conjugate() * k1h1)
-
-    print('normA', A1 * np.conjugate(A1) - B1 * np.conjugate(B1) + C1 * np.conjugate(C1) - D1 * np.conjugate(D1) + E1 * np.conjugate(E1))
 
     "second mode"
 
@@ -459,8 +407,6 @@ def get_mode_coefs(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[floa
 
     norm = np.sqrt(A2 * A2.conjugate() - B2 * B2.conjugate() + C2 * C2.conjugate() - D2 * D2.conjugate() + E2 * E2.conjugate() - F2 * F2.conjugate() + G2 * G2.conjugate() - H2 * H2.conjugate())
 
-    print('normB', norm)
-
     # Other form of diagonalization
 
     A3 = zeta2 * overlap(f2, u, xs)
@@ -470,8 +416,6 @@ def get_mode_coefs(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[floa
     B3 = xi2 * overlap(u, g2, xs)
     D3 = xi2 * overlap(k1, g2, xs)
     F3 = xi2 * overlap(s1, g2, xs)
-
-    print('normC', np.sqrt(A3 * A3.conjugate() - B3 * B3.conjugate() + C3 * C3.conjugate() - D3 * D3.conjugate() + E3 * E3.conjugate() - F3 * F3.conjugate()))
 
     return [A1, C1, E1, B1, D1], [A3, C3, E3, B3, D3, F3] #[A2, C2, E2, G2, B2, D2, F2, H2]
 
@@ -496,11 +440,6 @@ def get_mode_coefs_alt(u, f1_temp, g1_temp, f2_temp, g2_temp, xs) -> Tuple[List[
     hg2 = overlap(h, g2, xs)
 
     k = lambda omega: (g2(omega) - ug2 * u(omega) - hg2 * h(omega)) / np.sqrt(1 - ug2 * np.conjugate(ug2) - hg2 * np.conjugate(hg2))
-
-    print('f1 decomp:', overlap(u, f1, xs) * overlap(f1, u, xs) + overlap(h, f1, xs) * overlap(f1, h, xs) + overlap(k, f1, xs) * overlap(f1, k, xs))
-    print('g1 decomp:', overlap(u, g1, xs) * overlap(g1, u, xs) + overlap(h, g1, xs) * overlap(g1, h, xs) + overlap(k, g1, xs) * overlap(g1, k, xs))
-    print('f2 decomp:', overlap(u, f2, xs) * overlap(f2, u, xs) + overlap(h, f2, xs) * overlap(f2, h, xs) + overlap(k, f2, xs) * overlap(f2, k, xs))
-    print('g2 decomp:', overlap(u, g2, xs) * overlap(g2, u, xs) + overlap(h, g2, xs) * overlap(g2, h, xs) + overlap(k, g2, xs) * overlap(g2, k, xs))
 
 
 if __name__ == '__main__':

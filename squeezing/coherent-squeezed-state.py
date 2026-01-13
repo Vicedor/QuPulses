@@ -10,7 +10,7 @@ from thewalrus import quantum as twq
 gamma = 1
 xi = 0.1
 
-alpha = 0.1 + 0.1j
+alpha = 1 + 1j
 
 tp = 4
 tau = 1
@@ -117,6 +117,7 @@ def covariance_matrix_density_matrix():
     f_v = lambda x: f_temp(x) / zeta_v
 
     cov11 = 16 * zeta_v**2 * np.real(alpha * overlap(f_v, u))**2 - 16 * zeta_v * alpha * np.conjugate(alpha) / v_l * np.real(alpha * overlap(f_v, u)) + 4 * (alpha * np.conjugate(alpha))**2 / v_l**2
+    print(cov11)
     cov11 = cov11 + 4 * zeta_v**2 + (alpha * np.conjugate(alpha)) / v_l**2 - 4 * zeta_v * np.real(alpha * overlap(f_v, u)) / v_l
 
     cov12 = - 2 *zeta_v * np.imag(overlap(f_v, u) * alpha) / v_l
@@ -127,6 +128,8 @@ def covariance_matrix_density_matrix():
 
     cov = np.array([[cov11, cov12],
                      [cov12, cov22]]) - 2 * np.outer(displace, displace)
+
+    print(2 * np.outer(displace, displace))
 
     cov_inv = np.linalg.inv(cov)
     det_cov = np.linalg.det(cov)
@@ -181,6 +184,8 @@ def vacuum_state_density_matrix():
     density_matrix = D * density_matrix * D.dag()
 
     print(density_matrix.full()[0, 0])
+
+    print('zeta_u, zeta_v', zeta_u, zeta_v)
 
     return density_matrix
 
