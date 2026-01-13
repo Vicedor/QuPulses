@@ -81,7 +81,7 @@ def create_initial_state_dm(rho: qt.Qobj, N, M_old, M_new) -> qt.Qobj:
     data = []
     shape = (Y_new, Y_new)
     #rho0_array = np.zeros([Y_new, Y_new], dtype=np.complex_)
-    rho_data = rho.data
+    rho_data = rho.data_as(format='ndarray')
 
     # Deal with atomic state:
     for i in range(2):
