@@ -21,9 +21,11 @@ work: {insert arXiv and journal link}
 import numpy as np
 import qutip as qt
 from thewalrus import quantum as twq
-from scipy.integrate import quad
+from scipy.special import factorial
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from helper_functions import overlap
+from opo import OpticalParametricOscillator
 
 from typing import List, Callable, Tuple
 
@@ -42,12 +44,11 @@ def squeezed_coherent_state():
 
     # Physical parameters
     gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1         # amplitude strength of the parametric oscillator
+    xi    = 0.1j         # amplitude strength of the parametric oscillator
     alpha = 1 + 1j      # displacement of the coherent state
     tp    = 4           # pulse center in time of input gaussian pulse
     tau   = 1           # pulse width in time of input gaussian pulse
-    N     = 1           # number of parametric oscillators placed in sequence
-    Delta = 0           # detuning between the parametric oscillators and the input pulse
+    Delta = 1           # detuning between the parametric oscillators and the input pulse
     M     = 80          # the Hilbert space size of the output numerical quantum state
 
     # Array of frequencies for the relevant spectrum
@@ -56,27 +57,11 @@ def squeezed_coherent_state():
     # A gaussian input pulse in frequency domain (fourier transform of time domain)
     u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
 
-    # The parametric oscillator transformation of the input
-    chi_X = lambda omega, xi: - ((gamma / 2 + xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
-    chi_P = lambda omega, xi: - ((gamma / 2 - xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
+    # Create an OPO with the given parameters
+    opo = OpticalParametricOscillator(gamma, xi, Delta)
 
-    # Apply N parametric oscillators in sequence
-    gamma_N_plus = lambda omega: (chi_X(omega, xi) ** N + chi_P(omega, xi) ** N) / 2
-    gamma_N_minus = lambda omega: (chi_X(omega, xi) ** N - chi_P(omega, xi) ** N) / 2
-
-    # The F and G functions include a delta function in frequency. The following is after integration over one frequency
-    F = lambda omega: gamma_N_plus(omega - Delta)
-    G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
-
-    # Define fu and gu which is not normalized yet. Integral over delta function shifts arguments
-    fu_temp = lambda omega: F(omega) * u(omega)
-    gu_temp = lambda omega: G(2 * Delta - omega) * u(2 * Delta - omega).conjugate()
-
-    # Find the norm of fu and gu and redefine the normalized functions
-    zeta_u = np.sqrt(overlap(fu_temp, fu_temp, omegas))
-    xi_u = np.sqrt(overlap(gu_temp, gu_temp, omegas))
-    fu = lambda omega: fu_temp(omega) / zeta_u
-    gu = lambda omega: gu_temp(omega) / xi_u
+    # Transform the input pulse by F and G
+    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
 
     # Define the creation operator for the quantum state, here a displacement operator for the coherent state
     def f(au: qt.Qobj, audag: qt.Qobj):
@@ -86,17 +71,10 @@ def squeezed_coherent_state():
     ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
 
     # Compute the output mode (only one when the input is a coherent state)
-    v = ss.get_output_modes()[0]
+    v = ss.get_output_modes()
 
-    # Transform the output mode with F and G, still not normalized
-    fv_temp = lambda omega: F(omega).conjugate() * v(omega)
-    gv_temp = lambda omega: G(omega) * v(2 * Delta - omega).conjugate()
-
-    # Find the norm and normalize fv and gv
-    zeta_v = np.sqrt(overlap(fv_temp, fv_temp, omegas))
-    xi_v = np.sqrt(overlap(gv_temp, gv_temp, omegas))
-    fv = lambda omega: fv_temp(omega) / zeta_v
-    gv = lambda omega: gv_temp(omega) / xi_v
+    # Transform the output pulse by F ang G
+    zeta_v, xi_v, fv, gv = opo.get_fv_and_gv(omegas, v)
 
     # Copy of k, the length of the not normalized v, since it is needed for calculating the displacement vector
     # used in this special example, where the full functionality of the SqueezingSystem class is not used
@@ -142,12 +120,11 @@ def squeezed_cat_state():
     example of a squeezed cat state in the original work."""
     # Physical parameters
     gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1         # amplitude strength of the parametric oscillator
+    xi    = 0.1j         # amplitude strength of the parametric oscillator
     alpha = 1 + 1j      # displacement of the coherent state
     tp    = 4           # pulse center in time of input gaussian pulse
     tau   = 1           # pulse width in time of input gaussian pulse
-    N     = 1           # number of parametric oscillators placed in sequence
-    Delta = 0           # detuning between the parametric oscillators and the input pulse
+    Delta = 1           # detuning between the parametric oscillators and the input pulse
     M     = 80          # the Hilbert space size of the output numerical quantum state
 
     # Array of frequencies for the relevant spectrum
@@ -156,27 +133,11 @@ def squeezed_cat_state():
     # A gaussian input pulse in frequency domain (fourier transform of time domain)
     u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
 
-    # The parametric oscillator transformation of the input
-    chi_X = lambda omega, xi: - ((gamma / 2 + xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
-    chi_P = lambda omega, xi: - ((gamma / 2 - xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
+    # Create an OPO with the given parameters
+    opo = OpticalParametricOscillator(gamma, xi, Delta)
 
-    # Apply N parametric oscillators in sequence
-    gamma_N_plus = lambda omega: (chi_X(omega, xi) ** N + chi_P(omega, xi) ** N) / 2
-    gamma_N_minus = lambda omega: (chi_X(omega, xi) ** N - chi_P(omega, xi) ** N) / 2
-
-    # The F and G functions include a delta function in frequency. The following is after integration over one frequency
-    F = lambda omega: gamma_N_plus(omega - Delta)
-    G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
-
-    # Define fu and gu which is not normalized yet. Integral over delta function shifts arguments
-    fu_temp = lambda omega: F(omega) * u(omega)
-    gu_temp = lambda omega: G(2*Delta - omega) * u(2*Delta - omega).conjugate()
-
-    # Find the norm of fu and gu and redefine the normalized functions
-    zeta_u = np.sqrt(overlap(fu_temp, fu_temp, omegas))
-    xi_u = np.sqrt(overlap(gu_temp, gu_temp, omegas))
-    fu = lambda omega: fu_temp(omega) / zeta_u
-    gu = lambda omega: gu_temp(omega) / xi_u
+    # Transform the input pulse by F and G
+    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
 
     # Creation operator for a cat state
     def f(au: qt.Qobj, audag: qt.Qobj) -> qt.Qobj:
@@ -202,17 +163,10 @@ def squeezed_cat_state():
     ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
 
     # Compute the output mode (only one when the input is this type of cat state)
-    v = ss.get_output_modes()[0]
+    v = ss.get_output_modes()
 
-    # Transform the output mode with F and G, still not normalized
-    fv_temp = lambda omega: F(omega).conjugate() * v(omega)
-    gv_temp = lambda omega: G(omega) * v(2 * Delta - omega).conjugate()
-
-    # Find the norm and normalize fv and gv
-    zeta_v = np.sqrt(overlap(fv_temp, fv_temp, omegas))
-    xi_v = np.sqrt(overlap(gv_temp, gv_temp, omegas))
-    fv = lambda omega: fv_temp(omega) / zeta_v
-    gv = lambda omega: gv_temp(omega) / xi_v
+    # Transform the output pulse by F and G
+    zeta_v, xi_v, fv, gv = opo.get_fv_and_gv(omegas, v)
 
     # Obtain the full density matrix of the squeezed cat state
     rho_squeezed_cat_state = ss.get_squeezed_output_state(v, fv, gv, zeta_v, xi_v)
@@ -235,12 +189,11 @@ def squeezed_fock_state():
     example of a squeezed fock state in the original work."""
     # Physical parameters
     gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1         # amplitude strength of the parametric oscillator
+    xi    = 0.1j         # amplitude strength of the parametric oscillator
     n     = 1           # number of photons in the fock state
     tp    = 4           # pulse center in time of input gaussian pulse
     tau   = 1           # pulse width in time of input gaussian pulse
-    N     = 1           # number of parametric oscillators placed in sequence
-    Delta = 0           # detuning between the parametric oscillators and the input pulse
+    Delta = 1           # detuning between the parametric oscillators and the input pulse
     M     = 50          # the Hilbert space size of the output numerical quantum state
 
     # Array of frequencies for the relevant spectrum
@@ -249,27 +202,11 @@ def squeezed_fock_state():
     # A gaussian input pulse in frequency domain (fourier transform of time domain)
     u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
 
-    # The parametric oscillator transformation of the input
-    chi_X = lambda omega, xi: - ((gamma / 2 + xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
-    chi_P = lambda omega, xi: - ((gamma / 2 - xi) ** 2 + omega ** 2) / ((gamma / 2 - 1j * omega) ** 2 - xi ** 2)
+    # Create an OPO with the given parameters
+    opo = OpticalParametricOscillator(gamma, xi, Delta)
 
-    # Apply N parametric oscillators in sequence
-    gamma_N_plus = lambda omega: (chi_X(omega, xi) ** N + chi_P(omega, xi) ** N) / 2
-    gamma_N_minus = lambda omega: (chi_X(omega, xi) ** N - chi_P(omega, xi) ** N) / 2
-
-    # The F and G functions include a delta function in frequency. The following is after integration over one frequency
-    F = lambda omega: gamma_N_plus(omega - Delta)
-    G = lambda omega: gamma_N_minus(omega - Delta).conjugate()
-
-    # Define fu and gu which is not normalized yet. Integral over delta function shifts arguments
-    fu_temp = lambda omega: F(omega) * u(omega)
-    gu_temp = lambda omega: G(2*Delta - omega) * u(2*Delta - omega).conjugate()
-
-    # Find the norm of fu and gu and redefine the normalized functions
-    zeta_u = np.sqrt(overlap(fu_temp, fu_temp, omegas))
-    xi_u = np.sqrt(overlap(gu_temp, gu_temp, omegas))
-    fu = lambda omega: fu_temp(omega) / zeta_u
-    gu = lambda omega: gu_temp(omega) / xi_u
+    # Transform the input pulse by F and G
+    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
 
     # Creation operator for a fock state
     def f(au: qt.Qobj, audag: qt.Qobj) -> qt.Qobj:
@@ -288,7 +225,7 @@ def squeezed_fock_state():
         qt.Qobj
             The cat state operator
         """
-        return audag
+        return audag ** n / np.sqrt(factorial(n))
 
     # Initialize the squeezing system with the system parameters
     ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
@@ -296,21 +233,8 @@ def squeezed_fock_state():
     # Compute the output modes (two modes when the input is in a fock state)
     v1, v2 = ss.get_output_modes()
 
-    # Transform the output modes with F and G, still not normalized
-    fv1_temp = lambda omega: F(omega).conjugate() * v1(omega)
-    gv1_temp = lambda omega: G(omega) * v1(2*Delta - omega).conjugate()
-    fv2_temp = lambda omega: F(omega).conjugate() * v2(omega)
-    gv2_temp = lambda omega: G(omega) * v2(2*Delta - omega).conjugate()
-
-    # Find the norms and normalize fvs and gvs
-    zeta_v1 = np.sqrt(overlap(fv1_temp, fv1_temp, omegas))
-    xi_v1 = np.sqrt(overlap(gv1_temp, gv1_temp, omegas))
-    zeta_v2 = np.sqrt(overlap(fv2_temp, fv2_temp, omegas))
-    xi_v2 = np.sqrt(overlap(gv2_temp, gv2_temp, omegas))
-    fv1 = lambda omega: fv1_temp(omega) / zeta_v1
-    gv1 = lambda omega: gv1_temp(omega) / xi_v1
-    fv2 = lambda omega: fv2_temp(omega) / zeta_v2
-    gv2 = lambda omega: gv2_temp(omega) / xi_v2
+    # Transform the output pulses by F and G
+    zeta_v1, xi_v1, zeta_v2, xi_v2, fv1, gv1, fv2, gv2 = opo.get_fv_and_gv(omegas, [v1, v2])
 
     # Obtain the full density matrix of the squeezed fock state
     rho_squeezed_fock_state = ss.get_squeezed_output_state([v1, v2], [fv1, fv2], [gv1, gv2],
@@ -339,25 +263,6 @@ def squeezed_fock_state():
     plt.show()
 
 
-def overlap(f: Callable[[float], complex], g: Callable[[float], complex], xs: np.ndarray):
-    """
-    Compute the overlap integral <f|g> over an interval.
-
-    Parameters
-    ----------
-    f, g : callable
-        Functions of frequency returning (complex) amplitudes.
-    xs : ndarray
-        x-values of interval; the integration limits are xs[0] and xs[-1].
-
-    Returns
-    -------
-    complex
-        The value of the integration of conj(f(x)) * g(x) over the interval.
-    """
-    return quad(lambda omega: np.conjugate(f(omega)) * g(omega), xs[0], xs[-1], complex_func=True)[0]
-
-
 class SqueezingSystem:
     """
     Implements the functionality for transforming a quantum state occupying a single input mode over a second-order
@@ -377,8 +282,8 @@ class SqueezingSystem:
         input quantum state under the action upon the vacuum state.
     dim : int
         Dimension of the output Hilbert space(s). For a two mode output Hilbert space the same dimension will be used
-        for both spaces. This is due to the limited functionality of The Walrus package used to compute the multi-
-        dimensional Hermite polynomials
+        for both spaces. This is due to the limited functionality of The Walrus package used to compute the
+        multidimensional Hermite polynomials.
     u : callable
         The input mode of the input quantum state in frequency.
     fu, gu : callable
@@ -445,7 +350,7 @@ class SqueezingSystem:
         # Two output modes computed as in app. A of [1]
         else:
             # Rename gu_fu to keep the notation of the paper
-            gamma = gu_fu
+            gamma = np.conjugate(gu_fu)
             delta = np.sqrt(1 - gamma * np.conjugate(gamma))
 
             # Construct the orthogonal part of gu with respect to fu
