@@ -71,9 +71,9 @@ def squeezed_coherent_state():
     ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
 
     # Compute the output mode (only one when the input is a coherent state)
-    v = ss.get_output_modes()
+    v = ss.get_output_modes()[0]
 
-    # Transform the output pulse by F ang G
+    # Transform the output pulse by F and G
     zeta_v, xi_v, fv, gv = opo.get_fv_and_gv(omegas, v)
 
     # Copy of k, the length of the not normalized v, since it is needed for calculating the displacement vector
@@ -163,7 +163,7 @@ def squeezed_cat_state():
     ss = SqueezingSystem(f, M, u, fu, gu, zeta_u, xi_u, omegas)
 
     # Compute the output mode (only one when the input is this type of cat state)
-    v = ss.get_output_modes()
+    v = ss.get_output_modes()[0]
 
     # Transform the output pulse by F and G
     zeta_v, xi_v, fv, gv = opo.get_fv_and_gv(omegas, v)
@@ -193,7 +193,7 @@ def squeezed_fock_state():
     n     = 1           # number of photons in the fock state
     tp    = 4           # pulse center in time of input gaussian pulse
     tau   = 1           # pulse width in time of input gaussian pulse
-    Delta = 1           # detuning between the parametric oscillators and the input pulse
+    Delta = 0           # detuning between the parametric oscillators and the input pulse
     M     = 50          # the Hilbert space size of the output numerical quantum state
 
     # Array of frequencies for the relevant spectrum
