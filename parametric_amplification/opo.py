@@ -118,6 +118,8 @@ class OpticalParametricOscillator:
         if not isinstance(v, list):
             v = [v]
         if len(v) == 1:
+            # Unpack the v
+            v = v[0]
             # Transform the output mode with F and G, still not normalized
             fv_temp = lambda omega: np.conjugate(self.F(omega)) * v(omega)
             gv_temp = lambda omega: self.G(omega) * np.conjugate(v(- omega))
@@ -135,9 +137,9 @@ class OpticalParametricOscillator:
 
             # Transform the output modes with F and G, still not normalized
             fv1_temp = lambda omega: np.conjugate(self.F(omega)) * v1(omega)
-            gv1_temp = lambda omega: self.G(omega) * np.conjugate(v1(- omega))
+            gv1_temp = lambda omega: np.conjugate(self.G(- omega)) * np.conjugate(v1(- omega))
             fv2_temp = lambda omega: np.conjugate(self.F(omega)) * v2(omega)
-            gv2_temp = lambda omega: self.G(omega) * np.conjugate(v2(- omega))
+            gv2_temp = lambda omega: np.conjugate(self.G(- omega)) * np.conjugate(v2(- omega))
 
             # Find the norms and normalize fvs and gvs
             zeta_v1 = np.sqrt(overlap(fv1_temp, fv1_temp, omegas))
