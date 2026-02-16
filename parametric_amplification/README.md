@@ -21,6 +21,8 @@ The creating-CSS-using-OPO.py file includes the code for optimizing a Coherent S
 an odd schrödinger cat state, by squeezing a single photon input state in an OPO. This file will
 generate the data for figure 3 in [2].
 
+The rest of the files are legacy files, and may eventually be removed.
+
 [1]: [Parametric amplification of a quantum pulse, Tziperman, Christiansen, Kaminer, and Mølmer, 2024](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.110.053712)
 
 [2]: link to be inserted
