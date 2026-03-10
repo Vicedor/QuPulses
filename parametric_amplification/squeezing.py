@@ -32,37 +32,49 @@ from typing import List, Callable, Tuple
 
 def main():
     """Run the three example simulations sequentially."""
-    squeezed_coherent_state()
-    squeezed_cat_state()
-    squeezed_fock_state()
+    w_coherent, w_sq_coherent = squeezed_coherent_state()
+    w_cat, w_sq_cat = squeezed_cat_state()
+    w_fock, w_sq_fock1, w_sq_fock2 = squeezed_fock_state()
+
+    w_max = max(w_coherent.max(), w_cat.max(), w_sq_coherent.max(), w_sq_cat.max(),
+                w_fock.max(), w_sq_fock1.max(), w_sq_fock2.max())
+    w_min = min(w_coherent.min(), w_cat.min(), w_sq_coherent.min(), w_sq_cat.min(),
+                w_fock.min(), w_sq_fock1.min(), w_sq_fock2.min())
+
+    w_abs = max(abs(w_max), abs(w_min))
+
+    # Plot the Wigner function
+    nrm = mpl.colors.Normalize(w_min * w_abs / abs(w_min), w_max * w_abs / abs(w_max))
+
+    fig, axs = plt.subplots(2, 3, figsize=(20, 12), sharex=True, sharey=True)
+    axs[0, 0].contourf(xvec, xvec, w_coherent, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    axs[0, 1].contourf(xvec, xvec, w_cat, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    axs[0, 2].contourf(xvec, xvec, w_fock, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    axs[1, 0].contourf(xvec, xvec, w_sq_coherent, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    axs[1, 1].contourf(xvec, xvec, w_sq_cat, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    axs[1, 2].contourf(xvec, xvec, w_sq_fock2, 100, cmap=mpl.cm.RdBu, norm=nrm)
+    for i in range(2):
+        for j in range(3):
+            axs[i, j].set_aspect('equal')
+
+    sm = mpl.cm.ScalarMappable(norm=nrm, cmap=mpl.cm.RdBu)
+    sm.set_array([])  # required – the array itself isn’t used
+
+    cbar = fig.colorbar(
+        sm,
+        ax=axs,  # attach to all contour axes
+        location='right',
+        shrink=1,  # make it a bit shorter than the full height
+        pad=0.02,  # distance from the figure edge
+    )
+    plt.savefig('example_states_second_mode.png')
+    plt.show()
 
 
 def squeezed_coherent_state():
     """Generate and plot the Wigner function of a squeezed coherent state. In this example we do not use the full
     functionality of the method, but resort to calculating the Wigner function from the covariance matrix and
     displacement vector of the output squeezed coherent state, as in the example in the original work."""
-
-    # Physical parameters
-    gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1j         # amplitude strength of the parametric oscillator
-    alpha = 1 + 1j      # displacement of the coherent state
-    tp    = 4           # pulse center in time of input gaussian pulse
-    tau   = 1           # pulse width in time of input gaussian pulse
-    Delta = 1           # detuning between the parametric oscillators and the input pulse
-    M     = 80          # the Hilbert space size of the output numerical quantum state
-
-    # Array of frequencies for the relevant spectrum
-    omegas = np.linspace(-4, 4, 1000)
-
-    # A gaussian input pulse in frequency domain (fourier transform of time domain)
-    u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
-
-    # Create an OPO with the given parameters
-    opo = OpticalParametricOscillator(gamma, xi, Delta)
-
-    # Transform the input pulse by F and G
-    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
-
     # Define the creation operator for the quantum state, here a displacement operator for the coherent state
     def f(au: qt.Qobj, audag: qt.Qobj):
         return (alpha * audag - np.conjugate(alpha) * au).expm()
@@ -94,9 +106,6 @@ def squeezed_coherent_state():
     cov_inv = np.linalg.inv(cov)
     det_cov = np.linalg.det(cov)
 
-    # Define a grid for plotting the Wigner function
-    xvec = np.linspace(-5, 5, 200)
-
     # Shift the coordinates by the displacement vector and stack them for easy computation
     X, Y = np.meshgrid(xvec - r[0], xvec - r[1])
     diff = np.stack([X, Y], axis=-1)
@@ -106,39 +115,21 @@ def squeezed_coherent_state():
     val = np.einsum('...i,ij,...j', diff, cov_inv, diff)
     w = np.real(np.exp(-val) / np.sqrt(det_cov) / np.pi)
 
-    # Plot the Wigner function
-    nrm = mpl.colors.Normalize(w.min(), w.max())
-    fig, axs = plt.subplots(1, 1)
-    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
-    plt.colorbar(cs)
-    plt.show()
+    # Compute the wigner function of the initial coherent state
+    cov0 = np.identity(2)
+    r0 = np.array([np.sqrt(2) * np.real(alpha), np.sqrt(2) * np.imag(alpha)])
+    X0, Y0 = np.meshgrid(xvec - r0[0], xvec - r0[1])
+    diff0 = np.stack([X0, Y0], axis=-1)
+    val0 = np.einsum('...i,ij,...j', diff0, cov0, diff0)
+    w0 = np.real(np.exp(-val0) / np.pi)
+
+    return w0, w
 
 
 def squeezed_cat_state():
     """Generate and plot the Wigner function of a squeezed cat state. In this example we follow the full procedure
     of the original work, and show how the code package functionality can be used for each step. This generates the
     example of a squeezed cat state in the original work."""
-    # Physical parameters
-    gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1j         # amplitude strength of the parametric oscillator
-    alpha = 1 + 1j      # displacement of the coherent state
-    tp    = 4           # pulse center in time of input gaussian pulse
-    tau   = 1           # pulse width in time of input gaussian pulse
-    Delta = 1           # detuning between the parametric oscillators and the input pulse
-    M     = 80          # the Hilbert space size of the output numerical quantum state
-
-    # Array of frequencies for the relevant spectrum
-    omegas = np.linspace(-4, 4, 1000)
-
-    # A gaussian input pulse in frequency domain (fourier transform of time domain)
-    u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
-
-    # Create an OPO with the given parameters
-    opo = OpticalParametricOscillator(gamma, xi, Delta)
-
-    # Transform the input pulse by F and G
-    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
-
     # Creation operator for a cat state
     def f(au: qt.Qobj, audag: qt.Qobj) -> qt.Qobj:
         """
@@ -172,42 +163,18 @@ def squeezed_cat_state():
     rho_squeezed_cat_state = ss.get_squeezed_output_state(v, fv, gv, zeta_v, xi_v)
 
     # Find the Wigner function numerically
-    xvec = np.linspace(-5, 5, 200)
     w = qt.wigner(rho_squeezed_cat_state, xvec, xvec)
 
-    # Plot the Wigner function
-    nrm = mpl.colors.Normalize(w.min(), w.max())
-    fig, axs = plt.subplots(1, 1)
-    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
-    plt.colorbar(cs)
-    plt.show()
+    # Compute the wigner function of the initial cat state
+    w0 = qt.wigner(f(a, a.dag()) @ vac, xvec, xvec)
+
+    return w0, w
 
 
 def squeezed_fock_state():
     """Generate and plot the Wigner function of a squeezed fock state. In this example we follow the full procedure
     of the original work, and show how the code package functionality can be used for each step. This generates the
     example of a squeezed fock state in the original work."""
-    # Physical parameters
-    gamma = 1           # decay rate of the open quantum system
-    xi    = 0.1j         # amplitude strength of the parametric oscillator
-    n     = 1           # number of photons in the fock state
-    tp    = 4           # pulse center in time of input gaussian pulse
-    tau   = 1           # pulse width in time of input gaussian pulse
-    Delta = 0           # detuning between the parametric oscillators and the input pulse
-    M     = 50          # the Hilbert space size of the output numerical quantum state
-
-    # Array of frequencies for the relevant spectrum
-    omegas = np.linspace(-6, 6, 1000)
-
-    # A gaussian input pulse in frequency domain (fourier transform of time domain)
-    u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
-
-    # Create an OPO with the given parameters
-    opo = OpticalParametricOscillator(gamma, xi, Delta)
-
-    # Transform the input pulse by F and G
-    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
-
     # Creation operator for a fock state
     def f(au: qt.Qobj, audag: qt.Qobj) -> qt.Qobj:
         """
@@ -233,6 +200,13 @@ def squeezed_fock_state():
     # Compute the output modes (two modes when the input is in a fock state)
     v1, v2 = ss.get_output_modes()
 
+    plt.figure()
+    plt.plot(omegas, v1(omegas) * np.conjugate(v1(omegas)))
+    plt.plot(omegas, v2(omegas) * np.conjugate(v2(omegas)))
+    plt.xlim([-5.01, 5.01])
+    plt.savefig('v1_v2.pdf')
+    plt.show()
+
     # Transform the output pulses by F and G
     zeta_v1, xi_v1, zeta_v2, xi_v2, fv1, gv1, fv2, gv2 = opo.get_fv_and_gv(omegas, [v1, v2])
 
@@ -241,26 +215,15 @@ def squeezed_fock_state():
                                                            [zeta_v1, zeta_v2], [xi_v1, xi_v2])
 
     # Find the Wigner function numerically of output mode 1
-    xvec = np.linspace(-5, 5, 200)
-    w = qt.wigner(qt.ptrace(rho_squeezed_fock_state, 0), xvec, xvec)
-
-    # Plot the Wigner function for output mode 1
-    nrm = mpl.colors.Normalize(w.min(), w.max())
-    fig, axs = plt.subplots(1, 1)
-    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
-    plt.colorbar(cs)
-    plt.show()
+    w1 = qt.wigner(qt.ptrace(rho_squeezed_fock_state, 0), xvec, xvec)
 
     # Find the Wigner function numerically of output mode 2
-    xvec = np.linspace(-5, 5, 200)
-    w = qt.wigner(qt.ptrace(rho_squeezed_fock_state, 1), xvec, xvec)
+    w2 = qt.wigner(qt.ptrace(rho_squeezed_fock_state, 1), xvec, xvec)
 
-    # Plot the Wigner function for output mode 2
-    nrm = mpl.colors.Normalize(w.min(), w.max())
-    fig, axs = plt.subplots(1, 1)
-    cs = axs.contourf(xvec, xvec, w, 100, cmap=mpl.cm.RdBu, norm=nrm)
-    plt.colorbar(cs)
-    plt.show()
+    # Compute the wigner function of the initial fock state
+    w0 = qt.wigner(f(a, a.dag()) @ vac, xvec, xvec)
+
+    return w0, w1, w2
 
 
 class SqueezingSystem:
@@ -340,27 +303,27 @@ class SqueezingSystem:
 
         # Single mode output mode (eq. 10 in [1])
         if self.is_single_mode:
-            alpha = np.sqrt(self.beta)
-            k = np.sqrt(alpha * np.conjugate(alpha) * (self.zeta_u ** 2 + self.xi_u ** 2)
+            alpha_ = np.sqrt(self.beta)
+            k = np.sqrt(alpha_ * np.conjugate(alpha_) * (self.zeta_u ** 2 + self.xi_u ** 2)
                         + 2 * self.zeta_u * self.xi_u * np.real(self.beta * gu_fu))
-            v = lambda omega: (alpha * self.zeta_u * self.fu(omega)
-                               + np.conjugate(alpha) * self.xi_u * self.gu(omega)) / k
+            v = lambda omega: (alpha_ * self.zeta_u * self.fu(omega)
+                               + np.conjugate(alpha_) * self.xi_u * self.gu(omega)) / k
             return [v]
 
         # Two output modes computed as in app. A of [1]
         else:
             # Rename gu_fu to keep the notation of the paper
-            gamma = np.conjugate(gu_fu)
-            delta = np.sqrt(1 - gamma * np.conjugate(gamma))
+            gamma_ = np.conjugate(gu_fu)
+            delta = np.sqrt(1 - gamma_ * np.conjugate(gamma_))
 
             # Construct the orthogonal part of gu with respect to fu
-            hu = lambda omega: (self.gu(omega) - gamma * self.fu(omega)) / delta
+            hu = lambda omega: (self.gu(omega) - gamma_ * self.fu(omega)) / delta
 
             # Define the variables used in the appendix
             x = (self.alpha_sq * self.zeta_u ** 2
-                 + 2 * self.zeta_u * self.xi_u * np.real(np.conjugate(self.beta) * gamma)
-                 + self.alpha_sq * self.xi_u ** 2 * gamma * np.conjugate(gamma))
-            y = self.beta * self.zeta_u * self.xi_u * delta + self.alpha_sq * self.xi_u ** 2 * gamma * delta
+                 + 2 * self.zeta_u * self.xi_u * np.real(np.conjugate(self.beta) * gamma_)
+                 + self.alpha_sq * self.xi_u ** 2 * gamma_ * np.conjugate(gamma_))
+            y = self.beta * self.zeta_u * self.xi_u * delta + self.alpha_sq * self.xi_u ** 2 * gamma_ * delta
             z = self.alpha_sq * self.xi_u ** 2 * delta ** 2
 
             # Compute the coefficients of the fu and gu modes in v1 and calculate v1
@@ -630,4 +593,44 @@ def convert_density_matrix(density_matrix: np.ndarray):
 
 
 if __name__ == '__main__':
+    # Physical parameters
+    gamma = 1  # decay rate of the open quantum system
+    xi = 0.1j  # amplitude strength of the parametric oscillator
+    alpha = 1 + 1j  # displacement of the coherent state
+    n = 1  # Number of photons in the fock state
+    # tp    = 4           # pulse center in time of input gaussian pulse
+    # tau   = 1           # pulse width in time of input gaussian pulse
+    Gamma = 1
+    Delta = 0  # detuning between the parametric oscillators and the input pulse
+    M = 100  # the Hilbert space size of the output numerical quantum state
+
+    # Array of frequencies for the relevant spectrum
+    # omegas = np.linspace(-4, 4, 1000)
+    # Array of frequencies for the relevant spectrum
+    omegas = np.linspace(-300, 300, 30000)
+
+    # A gaussian input pulse in frequency domain (fourier transform of time domain)
+    # u = lambda omega: np.sqrt(tau) / np.pi ** (1 / 4) * np.exp(-tau ** 2 / 2 * omega ** 2 + 1j * tp * omega)
+    # A one-sided exponential input pulse in frequency domain
+    u = lambda omega: np.sqrt(Gamma / (2 * np.pi)) * (1j * omega + Gamma / 2) / (omega ** 2 + Gamma ** 2 / 4)
+
+    plt.figure()
+    plt.plot(omegas, u(omegas) * np.conjugate(u(omegas)))
+    plt.xlim([-5.01, 5.01])
+    plt.savefig('u.pdf')
+    plt.show()
+
+    # Create an OPO with the given parameters
+    opo = OpticalParametricOscillator(gamma, xi, Delta)
+
+    # Transform the input pulse by F and G
+    zeta_u, xi_u, fu, gu = opo.get_fu_and_gu(omegas, u)
+
+    # Define a grid for plotting the Wigner function
+    xvec = np.linspace(-5, 5, 200)
+
+    # Define the input operator and vacuum state
+    a = qt.destroy(M)
+    vac = qt.basis(M, 0)
+
     main()
