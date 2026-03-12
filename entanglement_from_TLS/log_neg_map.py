@@ -4,9 +4,9 @@ log_neg_map.py
 Computes a map of the logarithmic negativity for pairs of modes in the output radiation
 of a driven two-level system (TLS). The output modes are found either through an eigenvalue
 decomposition of the autocorrelation function g1(t, t') = <a_out^dagger(t) a_out(t')> or
-through a Takagi decomposition of the correlation function f1(t, t') = <a_out(t) a_out(t')>
+through a Takagi decomposition of the correlation function f1(t, t') = <a_out(t) a_out(t')>.
 
-The output modes are used as a basis for the output radiation, with the goal of analyzing
+The output modes are used as a basis for the output radiation, with the goal of analysing
 the entanglement properties of the output radiation. To do so, we compute the quantum state
 in pairs of output modes v_i(t) and v_j(t) using the virtual cavity method [1-3] to find
 the quantum state in the output modes. We use the SLH formalism [4] to compute the
@@ -27,9 +27,9 @@ The method is an implementation of the work in {insert arXiv or journal referenc
 
 [1] A. H. Kiilerich and K. Mølmer, Input-output theory with quantum pulses, Phys. Rev. Lett. 123, 123604 (2019).
 [2] A. H. Kiilerich and K. Mølmer, Quantum interactions with pulses of radiation, Phys. Rev. A 102, 023717 (2020).
-[3] V. R. Christiansen, M. M. Lund, F. Yang, and K. Mølmer, Jaynes-cummings interaction with a traveling light pulse,
+[3] V. R. Christiansen, M. M. Lund, F. Yang, and K. Mølmer, Jaynes-cummings interaction with a travelling light pulse,
 J. Opt. Soc. Am. B 41, C140 (2024).
-[4] J. Combes, J. Kerckhoff, and M. Sarovar, The SLH framework for modeling quantum input-output networks,
+[4] J. Combes, J. Kerckhoff, and M. Sarovar, The SLH framework for modelling quantum input-output networks,
 Advances in Physics: X 2, 784 (2017).
 """
 
@@ -65,7 +65,7 @@ use_brent = False
 # Overwrite previous results or not
 do_overwrite = False
 
-# The file for saving the result
+# The files for saving the result
 eigval_file = r'eigval_log_neg_map.pkl'
 takagi_file = r'takagi_log_neg_map.pkl'
 
@@ -140,9 +140,9 @@ def run_log_neg_map(h: float, overwrite: bool = False):
     # Run the calculation of the map depending on the chosen method
     t1 = time.time()
     if use_brent:
-        save_dic = log_neg_map_brent(h, task_args)
+        save_dic = log_neg_map_brent(task_args)
     else:
-        save_dic = log_neg_map(h, task_args)
+        save_dic = log_neg_map(task_args)
     t2 = time.time()
 
     # Add the map to the save file dictionary
@@ -502,7 +502,7 @@ def logneg(OmegaR: float, *args) -> float:
     tlist = np.linspace(0, T, nT)
 
     # Define the atom with the given parameter set
-    driven_atom = DrivenAtom(tlist, Omega, w0=Delta)
+    driven_atom = DrivenAtom(tlist, Omega, Delta=Delta)
 
     # Perform the correlation function calculation and its decomposition to find the output modes
     vals_list, vecs_list = correlation_func(driven_atom, n=7, trim=False, plot=False)
@@ -594,7 +594,7 @@ class DrivenAtom(QuantumSystem):
         list[qt.Qobj]
             List of the observables to compute and store the expectation values for.
         """
-        return [self.c1.dag() @ self.c1]
+        return [self.c.dag() @ self.c]
 
     def get_plotting_options(self) -> Any:
         """
