@@ -313,17 +313,17 @@ class SqueezingSystem:
         # Two output modes computed as in app. A of [1]
         else:
             # Rename gu_fu to keep the notation of the paper
-            gamma_ = np.conjugate(gu_fu)
-            delta = np.sqrt(1 - gamma_ * np.conjugate(gamma_))
+            varepsilon = np.conjugate(gu_fu)
+            delta = np.sqrt(1 - varepsilon * np.conjugate(varepsilon))
 
             # Construct the orthogonal part of gu with respect to fu
-            hu = lambda omega: (self.gu(omega) - gamma_ * self.fu(omega)) / delta
+            hu = lambda omega: (self.gu(omega) - varepsilon * self.fu(omega)) / delta
 
             # Define the variables used in the appendix
             x = (self.alpha_sq * self.zeta_u ** 2
-                 + 2 * self.zeta_u * self.xi_u * np.real(np.conjugate(self.beta) * gamma_)
-                 + self.alpha_sq * self.xi_u ** 2 * gamma_ * np.conjugate(gamma_))
-            y = self.beta * self.zeta_u * self.xi_u * delta + self.alpha_sq * self.xi_u ** 2 * gamma_ * delta
+                 + 2 * self.zeta_u * self.xi_u * np.real(np.conjugate(self.beta) * varepsilon)
+                 + self.alpha_sq * self.xi_u ** 2 * varepsilon * np.conjugate(varepsilon))
+            y = self.beta * self.zeta_u * self.xi_u * delta + self.alpha_sq * self.xi_u ** 2 * varepsilon * delta
             z = self.alpha_sq * self.xi_u ** 2 * delta ** 2
 
             # Compute the coefficients of the fu and gu modes in v1 and calculate v1
