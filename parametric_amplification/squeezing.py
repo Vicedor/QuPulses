@@ -291,6 +291,11 @@ class SqueezingSystem:
         aa = qt.expect(a @ a, psi)
         return adaga, aa
 
+    def get_input_state(self) -> qt.Qobj:
+        au = qt.destroy(self.dim)
+        vac = qt.basis(self.dim, 0)
+        return self.f(au, au.dag()) @ vac
+
     def get_output_modes(self):
         """
         Return the output modes of the system.
@@ -425,8 +430,8 @@ class SqueezingSystem:
             self,
             fv: Callable[[float], complex] | List[Callable[[float], complex]],
             gv: Callable[[float], complex] | List[Callable[[float], complex]],
-            zeta_v: float,
-            xi_v: float
+            zeta_v: float | List[float],
+            xi_v: float | List[float]
     ) -> qt.Qobj:
         """
         Construct the squeezed vacuum state in the v mode(s) using the multidimensional Hermite polynomials.

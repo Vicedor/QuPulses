@@ -92,7 +92,34 @@ def plot_wigner_functions():
     alpha = alphas[0, 64]
 
     # Find the squeezed Fock state for these parameters
-    sq_fock = qt.ptrace(squeezed_fock_state(xi=r, Gamma=Gamma), 0)
+    two_mode_state = squeezed_fock_state(xi=r, Gamma=Gamma)
+    sq_fock = qt.ptrace(two_mode_state, 0)
+
+    print(two_mode_state.purity())
+    eigvals, eigkets = two_mode_state.eigenstates()
+    eigval = eigvals[-1]
+    ket = eigkets[-1]
+    qt.plot_fock_distribution(sq_fock)
+    plt.xlim([0, 10])
+    plt.show()
+
+    N = 10
+    M = 10
+    fock_distribution = np.zeros((N, M))
+    dims = ket.dims[0]
+    for i in range(N):
+        for j in range(M):
+            overlap = ket.overlap(qt.tensor(qt.basis(dims[0], i), qt.basis(dims[1], j)))
+            fock_distribution[i, j] = overlap * np.conjugate(overlap)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.matshow(fock_distribution)
+    for i in range(N):
+        for j in range(M):
+            c = fock_distribution[j, i]
+            ax.text(i, j, f'{c:.2f}', va='center', ha='center')
+    plt.title(f'Fock distribution with c = {eigval:.2f}')
+    plt.show()
 
     # Find the odd cat state for these parameters
     sq_cat = cat_state(alpha)
